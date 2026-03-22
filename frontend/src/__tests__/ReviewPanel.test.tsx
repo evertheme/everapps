@@ -13,7 +13,7 @@ const BASE_REVIEW: StoryReview = {
     completeness: { score: 4, comment: "All fields present" },
     testability: { score: 5, comment: "Well-defined acceptance criteria" },
     independence: { score: 3, comment: "Somewhat coupled" },
-    value: { score: 5, comment: "High business value" },
+    value: { score: 5, comment: "Strong strategic impact" },
   },
   suggestions: null,
   created_at: "2024-01-01T00:00:00Z",
