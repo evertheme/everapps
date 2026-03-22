@@ -4,8 +4,12 @@ from app.config import get_settings
 
 settings = get_settings()
 
+# Railway (and some other platforms) emit "postgres://" which SQLAlchemy 2.x
+# no longer accepts — normalise to "postgresql://" at startup.
+_db_url = settings.database_url.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(
-    settings.database_url,
+    _db_url,
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
