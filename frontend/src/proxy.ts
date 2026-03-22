@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Paths accessible without authentication (prefix-matched)
 const PUBLIC_PREFIXES = ["/login", "/register", "/pricing"];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow public paths and Next.js internals through

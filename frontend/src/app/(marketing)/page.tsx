@@ -153,8 +153,8 @@ const FAQS = [
 
 /* ─── Page ──────────────────────────────────────────────────────────────────── */
 
-export default function LandingPage() {
-  const cookieStore = cookies();
+export default async function LandingPage() {
+  const cookieStore = await cookies();
   const token = cookieStore.get('access_token');
   if (token?.value) {
     redirect('/dashboard');
