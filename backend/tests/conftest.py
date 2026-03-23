@@ -95,11 +95,18 @@ def test_user(db_session):
 
 
 @pytest.fixture
-def auth_client(client, test_user):
-    """TestClient with a valid Bearer token for test_user pre-set."""
+def auth_client(test_user):
+    """TestClient with a valid Bearer token for test_user pre-set.
+
+    Deliberately creates its own TestClient rather than reusing the `client`
+    fixture, so that any test requesting both `client` and `auth_client` (or a
+    fixture that depends on it) receives two independent instances and the
+    unauthenticated client is never accidentally contaminated with auth headers.
+    """
     token = create_access_token(test_user.id)
-    client.headers.update({"Authorization": f"Bearer {token}"})
-    return client
+    c = TestClient(app, raise_server_exceptions=True)
+    c.headers.update({"Authorization": f"Bearer {token}"})
+    return c
 
 
 @pytest.fixture
