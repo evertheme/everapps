@@ -167,3 +167,32 @@ export interface SaveDocumentResponse {
   version_number: number;
   message: string;
 }
+
+// ── Requirements Wizard ───────────────────────────────────────────────────────
+
+export type CurrentStateType =
+  | "new_product"
+  | "launch_mvp"
+  | "enhance_existing"
+  | "replace_legacy"
+  | "other";
+
+export const CURRENT_STATE_OPTIONS: { value: CurrentStateType; label: string }[] = [
+  { value: "new_product",       label: "New Product (no current state)" },
+  { value: "launch_mvp",        label: "Launch MVP" },
+  { value: "enhance_existing",  label: "Enhance Existing Product" },
+  { value: "replace_legacy",    label: "Replace Legacy System" },
+  { value: "other",             label: "Other" },
+];
+
+export interface WizardSuggestions {
+  business_problem: string;
+  business_objectives: string[];
+  current_state_notes: string;
+  desired_state_notes: string;
+}
+
+export interface WizardGenerateResponse {
+  document_id: string;
+  message: string;
+}

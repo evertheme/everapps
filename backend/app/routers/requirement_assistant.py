@@ -33,15 +33,21 @@ from app.schemas.requirement_assistant import (
     SectionSaveRequest,
     SectionStatusOut,
     SectionTemplateOut,
+    WizardGenerateOut,
+    WizardGenerateRequest,
+    WizardSuggestionsOut,
+    WizardSuggestionsRequest,
 )
 from app.services.auth import CurrentUser
 from app.services.gap_analysis_service import (
     approve_section,
     draft_gap_fill,
     gap_status_from_score,
+    generate_wizard_suggestions,
     get_latest_gap_analysis,
     run_gap_analysis,
     save_gap_fill_document,
+    save_wizard_document,
 )
 from app.services.llm.factory import get_provider_for_user
 from app.services.requirement_template_service import requirement_template_service
@@ -453,4 +459,88 @@ def save_gap_document(
         document_id=str(new_version.document_id),
         version_number=new_version.version_number,
         message=f"Document saved as version {new_version.version_number}.",
+    )
+
+
+# ── Phase 3: wizard endpoints ─────────────────────────────────────────────────
+
+@router.post(
+    "/{project_id}/wizard/suggestions",
+    response_model=WizardSuggestionsOut,
+)
+async def get_wizard_suggestions(
+    project_id: uuid.UUID,
+    payload: WizardSuggestionsRequest,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Generate AI suggestions for the Project Context step of the wizard.
+
+    Calls the LLM with the product name, description, and executive summary
+    from the first two wizard steps, and returns suggestions for:
+    - Business problem statement
+    - Business objectives (list)
+    - Current state description
+    - Desired future state description
+    """
+    _assert_project_access(project_id, current_user.id, db)
+
+    llm_settings = (
+        db.query(LLMSettings).filter(LLMSettings.user_id == current_user.id).first()
+    )
+    provider = get_provider_for_user(llm_settings)
+
+    suggestions = await generate_wizard_suggestions(
+        product_name=payload.product_name,
+        description=payload.description,
+        executive_summary=payload.executive_summary,
+        provider=provider,
+    )
+
+    return WizardSuggestionsOut(**suggestions)
+
+
+@router.post(
+    "/{project_id}/wizard/generate",
+    response_model=WizardGenerateOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def generate_wizard_document(
+    project_id: uuid.UUID,
+    payload: WizardGenerateRequest,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Assemble a requirements document from wizard answers and save it as a new
+    RequirementDocument + DocumentVersion.
+
+    The document is saved in Markdown format aligned to the canonical 12-section
+    taxonomy. It covers sections 1 (Header), 2 (Executive Summary),
+    3 (Project Context & Objectives), and optionally 5 (Functional Requirements).
+
+    After this call the document appears in the project's document list and can
+    be used for gap analysis or story generation immediately.
+    """
+    _assert_project_access(project_id, current_user.id, db)
+
+    doc = save_wizard_document(
+        project_id=project_id,
+        user_id=current_user.id,
+        product_name=payload.product_name,
+        description=payload.description,
+        executive_summary=payload.executive_summary,
+        business_problem=payload.business_problem,
+        business_objectives=payload.business_objectives,
+        current_state_type=payload.current_state_type,
+        current_state_notes=payload.current_state_notes,
+        desired_state_notes=payload.desired_state_notes,
+        must_have_features=payload.must_have_features,
+        db=db,
+    )
+
+    return WizardGenerateOut(
+        document_id=str(doc.id),
+        message=f"Requirements document '{doc.filename}' created successfully.",
     )

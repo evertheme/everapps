@@ -867,3 +867,262 @@ class TestGapFillEndpoints:
         )
         assert report_res.status_code == 200
         assert report_res.json()["can_save"] is True
+
+
+# ── Phase 3 wizard service unit tests ────────────────────────────────────────
+
+class TestWizardService:
+    """Unit tests for the wizard service functions."""
+
+    WIZARD_PAYLOAD = dict(
+        project_id=None,  # filled in test
+        user_id=None,
+        product_name="Acme Scheduler",
+        description="An online scheduling tool for small businesses.",
+        executive_summary=(
+            "Small businesses waste hours per week on manual scheduling via phone and email. "
+            "Acme Scheduler automates appointment booking for service businesses, reducing "
+            "no-shows and freeing staff time."
+        ),
+        business_problem="Manual scheduling leads to double-bookings and missed appointments.",
+        business_objectives=[
+            "To reduce no-show rate by 30% within 6 months.",
+            "To automate 80% of bookings within the first quarter.",
+        ],
+        current_state_type="enhance_existing",
+        current_state_notes="Currently handled by phone; prone to errors.",
+        desired_state_notes="Customers self-schedule online; staff get automatic reminders.",
+        must_have_features=[
+            "Book appointments via a public booking page",
+            "Send email reminders 24 hours before appointments",
+        ],
+    )
+
+    def test_save_wizard_document_creates_doc_and_version(self, db_session, test_user):
+        from app.models.project import Project
+        from app.services.gap_analysis_service import save_wizard_document
+        from app.models.document import DocumentVersion
+
+        project = Project(id=uuid.uuid4(), user_id=test_user.id, name="P")
+        db_session.add(project)
+        db_session.commit()
+
+        payload = {**self.WIZARD_PAYLOAD, "project_id": project.id, "user_id": test_user.id}
+        doc = save_wizard_document(**payload, db=db_session)
+
+        assert doc.id is not None
+        assert doc.project_id == project.id
+        assert doc.current_version == 1
+        assert doc.filename.endswith(".md")
+
+        version = (
+            db_session.query(DocumentVersion)
+            .filter(DocumentVersion.document_id == doc.id, DocumentVersion.version_number == 1)
+            .first()
+        )
+        assert version is not None
+        assert "Requirements Document" in version.content
+
+    def test_save_wizard_document_content_includes_all_sections(self, db_session, test_user):
+        from app.models.project import Project
+        from app.services.gap_analysis_service import save_wizard_document
+        from app.models.document import DocumentVersion
+
+        project = Project(id=uuid.uuid4(), user_id=test_user.id, name="P")
+        db_session.add(project)
+        db_session.commit()
+
+        payload = {**self.WIZARD_PAYLOAD, "project_id": project.id, "user_id": test_user.id}
+        doc = save_wizard_document(**payload, db=db_session)
+
+        version = (
+            db_session.query(DocumentVersion)
+            .filter(DocumentVersion.document_id == doc.id)
+            .first()
+        )
+        content = version.content
+        assert "Acme Scheduler" in content
+        assert "Executive Summary" in content
+        assert "Business Problem" in content
+        assert "Business Objectives" in content
+        assert "Functional Requirements" in content
+        assert "FR-001" in content
+
+    def test_save_wizard_document_no_features_skips_section(self, db_session, test_user):
+        from app.models.project import Project
+        from app.services.gap_analysis_service import save_wizard_document
+        from app.models.document import DocumentVersion
+
+        project = Project(id=uuid.uuid4(), user_id=test_user.id, name="P")
+        db_session.add(project)
+        db_session.commit()
+
+        payload = {
+            **self.WIZARD_PAYLOAD,
+            "project_id": project.id,
+            "user_id": test_user.id,
+            "must_have_features": [],
+        }
+        doc = save_wizard_document(**payload, db=db_session)
+
+        version = (
+            db_session.query(DocumentVersion)
+            .filter(DocumentVersion.document_id == doc.id)
+            .first()
+        )
+        assert "Functional Requirements" not in version.content
+
+    @pytest.mark.asyncio
+    async def test_generate_wizard_suggestions_calls_llm(self, db_session, test_user):
+        from app.services.gap_analysis_service import generate_wizard_suggestions
+
+        mock_response = json.dumps({
+            "business_problem": "The problem is X.",
+            "business_objectives": ["To increase Y by Z%.", "To reduce A by B%."],
+            "current_state_notes": "Currently things are bad.",
+            "desired_state_notes": "In the future things will be great.",
+        })
+        mock_provider = AsyncMock()
+        mock_provider.complete = AsyncMock(return_value=mock_response)
+
+        result = await generate_wizard_suggestions(
+            product_name="Test Product",
+            description="A great product.",
+            executive_summary="This solves the problem.",
+            provider=mock_provider,
+        )
+
+        assert result["business_problem"] == "The problem is X."
+        assert len(result["business_objectives"]) == 2
+        assert mock_provider.complete.called
+
+
+# ── Phase 3 wizard API endpoint tests ────────────────────────────────────────
+
+class TestWizardEndpoints:
+    """Integration tests for wizard endpoints."""
+
+    WIZARD_PAYLOAD = {
+        "product_name": "Acme Scheduler",
+        "description": "An online scheduling tool for small businesses.",
+        "executive_summary": (
+            "Small businesses waste hours per week on manual scheduling. "
+            "Acme Scheduler automates appointment booking."
+        ),
+        "business_problem": "Manual scheduling leads to double-bookings.",
+        "business_objectives": [
+            "To reduce no-show rate by 30% within 6 months.",
+            "To automate 80% of bookings within Q1.",
+        ],
+        "current_state_type": "enhance_existing",
+        "current_state_notes": "Currently handled by phone.",
+        "desired_state_notes": "Customers self-schedule online.",
+        "must_have_features": [
+            "Book appointments via a public booking page",
+            "Send email reminders 24 hours before appointments",
+        ],
+    }
+
+    def test_generate_creates_document(self, auth_client, test_project):
+        project_id = test_project["id"]
+        res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        assert res.status_code == 201
+        data = res.json()
+        assert "document_id" in data
+        assert "Acme Scheduler" in data["message"]
+
+    def test_generate_document_shows_in_list(self, auth_client, test_project):
+        project_id = test_project["id"]
+        auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        docs_res = auth_client.get(f"/api/v1/documents/{project_id}/")
+        assert docs_res.status_code == 200
+        docs = docs_res.json()
+        assert len(docs) == 1
+        assert "Acme" in docs[0]["filename"]
+
+    def test_generate_document_content_has_all_sections(self, auth_client, test_project):
+        project_id = test_project["id"]
+        res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        doc_id = res.json()["document_id"]
+        doc_res = auth_client.get(f"/api/v1/documents/{project_id}/{doc_id}")
+        assert doc_res.status_code == 200
+        content = doc_res.json()["latest_content"]
+        assert "Executive Summary" in content
+        assert "Business Objectives" in content
+        assert "FR-001" in content
+
+    def test_generate_without_features_omits_section(self, auth_client, test_project):
+        project_id = test_project["id"]
+        payload = {**self.WIZARD_PAYLOAD, "must_have_features": []}
+        res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=payload,
+        )
+        doc_id = res.json()["document_id"]
+        content = auth_client.get(
+            f"/api/v1/documents/{project_id}/{doc_id}"
+        ).json()["latest_content"]
+        assert "Functional Requirements" not in content
+
+    def test_generate_requires_auth(self, client, test_project):
+        res = client.post(
+            f"/api/v1/req-assistant/{test_project['id']}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        assert res.status_code == 403
+
+    def test_get_suggestions_requires_auth(self, client, test_project):
+        res = client.post(
+            f"/api/v1/req-assistant/{test_project['id']}/wizard/suggestions",
+            json={
+                "product_name": "Test",
+                "description": "Test product.",
+                "executive_summary": "A test.",
+            },
+        )
+        assert res.status_code == 403
+
+    def test_get_suggestions_returns_structured_data(self, auth_client, test_project):
+        project_id = test_project["id"]
+        mock_response = json.dumps({
+            "business_problem": "The business problem.",
+            "business_objectives": ["To increase X.", "To reduce Y."],
+            "current_state_notes": "Currently manual.",
+            "desired_state_notes": "Will be automated.",
+        })
+
+        with patch(
+            "app.routers.requirement_assistant.generate_wizard_suggestions",
+            new_callable=AsyncMock,
+            return_value={
+                "business_problem": "The business problem.",
+                "business_objectives": ["To increase X.", "To reduce Y."],
+                "current_state_notes": "Currently manual.",
+                "desired_state_notes": "Will be automated.",
+            },
+        ):
+            res = auth_client.post(
+                f"/api/v1/req-assistant/{project_id}/wizard/suggestions",
+                json={
+                    "product_name": "My Product",
+                    "description": "A great product.",
+                    "executive_summary": "This solves the problem.",
+                },
+            )
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["business_problem"] == "The business problem."
+        assert len(data["business_objectives"]) == 2
+        assert data["current_state_notes"] == "Currently manual."
+        assert data["desired_state_notes"] == "Will be automated."
+        _ = mock_response  # suppress unused warning

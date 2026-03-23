@@ -6,6 +6,7 @@ Convert requirements documents into reviewed, version-controlled backlogs and pu
 
 - Upload requirements documents (`.docx`, `.pdf`, `.txt`, `.md`)
 - **Requirements Document Assistant** — AI-powered gap analysis maps your document against an industry-standard 12-section taxonomy (IEEE 29148 / BRD / PRD), scores each section for completeness, and highlights missing or thin content before you generate stories; Phase 2 adds interactive gap fill — use AI to draft missing sections, edit the drafts, approve them, and save the improved document as a new version
+- **Requirements Wizard** — guided 4-step wizard for projects with no document yet: answer questions about product name, executive summary, business objectives, and must-have features; AI suggests content at each step; results are saved as a starter requirements document ready for gap analysis or story generation
 - Downloadable requirements document template (`.docx`) pre-structured to the 12-section taxonomy — fill it in and upload it straight back
 - Structure-aware processing that detects and preserves document sections
 - Full document support — large documents are automatically split into provider-optimised chunks so nothing is truncated
@@ -135,6 +136,7 @@ npm run test:coverage           # with coverage report
 | Review UI | — | ReviewPanel component |
 | Requirements assistant — Phase 1 (gap analysis) | taxonomy service (11 tests), gap analysis service with mocked LLM (4 tests), API endpoints (10 tests) | GapAnalysisPanel component (28 tests), RequirementCompleteness widget (13 tests) |
 | Requirements assistant — Phase 2 (interactive gap fill) | draft_gap_fill service (3 tests), approve_section service (3 tests), save_gap_fill_document service (3 tests), API endpoints (9 tests) | Covered by updated GapAnalysisPanel tests (fill, approve, save interactions) |
+| Requirements wizard | save_wizard_document service (3 tests), generate_wizard_suggestions service (1 test), API endpoints (7 tests) | — |
 
 ## Tech Stack
 

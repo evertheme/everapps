@@ -129,6 +129,22 @@ Return ONLY valid JSON:
   }
 }"""
 
+_WIZARD_SUGGESTIONS_SYSTEM_PROMPT = """You are an expert business analyst and product manager. Based on the product information provided, generate suggestions for a requirements document.
+
+Return ONLY valid JSON — no markdown fences, no extra text:
+{
+  "business_problem": "...",
+  "business_objectives": ["...", "...", "..."],
+  "current_state_notes": "...",
+  "desired_state_notes": "..."
+}
+
+Guidelines:
+- business_problem: 2–4 sentences clearly describing the pain/gap this product addresses
+- business_objectives: 4–6 specific, measurable objectives using 'To [verb] [metric] by [target]' format where possible
+- current_state_notes: 2–3 sentences describing how things work today and why it is a problem
+- desired_state_notes: 2–3 sentences describing how things should work once this product is built"""
+
 _GAP_FILL_SYSTEM_PROMPT = """You are an expert requirements analyst. Your task is to draft a single section of a requirements document.
 
 You will be given:
@@ -460,6 +476,157 @@ def approve_section(
     db.commit()
     db.refresh(section)
     return section
+
+
+# ── Phase 3: wizard ───────────────────────────────────────────────────────────
+
+async def generate_wizard_suggestions(
+    product_name: str,
+    description: str,
+    executive_summary: str,
+    provider: BaseLLMProvider,
+) -> dict:
+    """
+    Call the LLM to suggest business problem, objectives, and state context
+    based on the product name, description, and executive summary from the
+    wizard's first two steps.
+
+    Returns a dict matching WizardSuggestionsOut.
+    """
+    user_prompt = (
+        f"Product Name: {product_name}\n\n"
+        f"Description: {description}\n\n"
+        f"Executive Summary: {executive_summary}\n\n"
+        "Generate suggestions for the requirements document sections above."
+    )
+    raw = await provider.complete(_WIZARD_SUGGESTIONS_SYSTEM_PROMPT, user_prompt)
+    data = _parse_json_response(raw)
+
+    return {
+        "business_problem": data.get("business_problem", ""),
+        "business_objectives": data.get("business_objectives", []),
+        "current_state_notes": data.get("current_state_notes", ""),
+        "desired_state_notes": data.get("desired_state_notes", ""),
+    }
+
+
+def save_wizard_document(
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    product_name: str,
+    description: str,
+    executive_summary: str,
+    business_problem: str,
+    business_objectives: list[str],
+    current_state_type: str,
+    current_state_notes: str,
+    desired_state_notes: str,
+    must_have_features: list[str],
+    db: Session,
+) -> RequirementDocument:
+    """
+    Assemble a requirements document from wizard answers, persist it as a
+    RequirementDocument + DocumentVersion, and return the document record.
+
+    The content is stored as Markdown aligned to the canonical taxonomy.
+    """
+    from datetime import date
+
+    _CURRENT_STATE_LABELS = {
+        "new_product": "New Product (no current state)",
+        "launch_mvp": "Launch MVP",
+        "enhance_existing": "Enhance Existing Product",
+        "replace_legacy": "Replace Legacy System",
+        "other": "Other",
+    }
+    current_state_label = _CURRENT_STATE_LABELS.get(
+        current_state_type, current_state_type
+    )
+    today = date.today().isoformat()
+
+    # Build Markdown document
+    parts: list[str] = []
+
+    parts.append(f"# Requirements Document: {product_name}\n")
+
+    # Section 1 — Document Header
+    parts.append("## 1. Document Header\n")
+    parts.append(
+        f"**Product Name:** {product_name}  \n"
+        f"**Version:** 0.1 (Draft)  \n"
+        f"**Date:** {today}  \n"
+        f"**Approval Status:** Draft  \n"
+        f"**Description:** {description}\n"
+    )
+
+    # Section 2 — Executive Summary
+    parts.append("## 2. Executive Summary\n")
+    parts.append(f"{executive_summary}\n")
+
+    # Section 3 — Project Context & Business Objectives
+    parts.append("## 3. Project Context & Business Objectives\n")
+    parts.append("### Business Problem Statement\n")
+    parts.append(f"{business_problem}\n")
+
+    parts.append("### Business Objectives\n")
+    for i, obj in enumerate(business_objectives, 1):
+        parts.append(f"{i}. {obj}")
+    parts.append("")
+
+    parts.append("### Current State vs. Desired Future State\n")
+    if current_state_type == "new_product":
+        parts.append(f"**Current State:** {current_state_label}\n")
+    else:
+        parts.append(f"**Current State:** {current_state_label}\n")
+        if current_state_notes.strip():
+            parts.append(f"{current_state_notes}\n")
+
+    if desired_state_notes.strip():
+        parts.append(f"**Desired Future State:**\n{desired_state_notes}\n")
+
+    # Section 5 — Functional Requirements (must-have features)
+    if must_have_features:
+        parts.append("## 5. Functional Requirements\n")
+        parts.append("### Must-Have Features\n")
+        for i, feature in enumerate(must_have_features, 1):
+            fr_id = f"FR-{i:03d}"
+            # Normalise: ensure it reads as a "shall" statement
+            feature_text = feature.strip()
+            if not feature_text.lower().startswith("the system shall"):
+                feature_text = f"The system shall {feature_text}"
+            parts.append(f"| {fr_id} | {feature_text} | Must-have |")
+        parts.append("")
+
+    markdown_content = "\n".join(parts)
+
+    # Sanitise filename
+    safe_name = "".join(
+        c if c.isalnum() or c in " -_" else "" for c in product_name
+    ).strip()
+    filename = f"{safe_name or 'requirements'}-requirements.md"
+
+    doc = RequirementDocument(
+        project_id=project_id,
+        created_by=user_id,
+        filename=filename,
+        file_type="md",
+        current_version=1,
+    )
+    db.add(doc)
+    db.flush()
+
+    version = DocumentVersion(
+        document_id=doc.id,
+        created_by=user_id,
+        version_number=1,
+        content=markdown_content,
+        file_path=None,
+    )
+    db.add(version)
+    db.commit()
+    db.refresh(doc)
+    logger.info("Wizard document created: doc=%s project=%s", doc.id, project_id)
+    return doc
 
 
 def save_gap_fill_document(

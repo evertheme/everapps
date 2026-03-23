@@ -75,6 +75,48 @@ class SaveDocumentResponse(BaseModel):
     message: str
 
 
+# ── Wizard (Phase 3 — guided document creation) ──────────────────────────────
+
+CURRENT_STATE_TYPES = {
+    "new_product": "New Product (no current state)",
+    "launch_mvp": "Launch MVP",
+    "enhance_existing": "Enhance Existing Product",
+    "replace_legacy": "Replace Legacy System",
+    "other": "Other",
+}
+
+
+class WizardSuggestionsRequest(BaseModel):
+    product_name: str
+    description: str
+    executive_summary: str
+
+
+class WizardSuggestionsOut(BaseModel):
+    business_problem: str
+    business_objectives: list[str]
+    current_state_notes: str
+    desired_state_notes: str
+
+
+class WizardGenerateRequest(BaseModel):
+    product_name: str
+    description: str
+    executive_summary: str
+    business_problem: str
+    business_objectives: list[str]
+    # new_product | launch_mvp | enhance_existing | replace_legacy | other
+    current_state_type: str
+    current_state_notes: str = ""
+    desired_state_notes: str = ""
+    must_have_features: list[str] = []
+
+
+class WizardGenerateOut(BaseModel):
+    document_id: str
+    message: str
+
+
 # ── Session (shared base, used by Phase 2+ wizard) ───────────────────────────
 
 class RequirementSessionOut(BaseModel):
