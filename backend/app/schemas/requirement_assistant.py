@@ -15,7 +15,7 @@ class SectionTemplateOut(BaseModel):
     prompt_questions: list[str]
 
 
-# ── Gap Analysis ───────────────────────────────────────────────────────────────
+# ── Gap Analysis — read (Phase 1 + 2) ─────────────────────────────────────────
 
 class SectionStatusOut(BaseModel):
     section_type: str
@@ -26,6 +26,8 @@ class SectionStatusOut(BaseModel):
     completeness_score: int
     ai_feedback: str | None
     content: str
+    # status: pending | in_progress | complete | skipped
+    status: str
 
     model_config = {"from_attributes": True}
 
@@ -37,12 +39,40 @@ class GapAnalysisReportOut(BaseModel):
     status: str
     sections: list[SectionStatusOut]
     created_at: datetime
+    # True when document_header and executive_summary are both approved
+    can_save: bool
 
     model_config = {"from_attributes": True}
 
 
 class GapAnalysisRunRequest(BaseModel):
     document_id: uuid.UUID
+
+
+# ── Gap Analysis — write (Phase 2) ────────────────────────────────────────────
+
+class SectionFillOut(BaseModel):
+    """Returned after an AI draft is generated for a section."""
+    section_type: str
+    content: str
+    ai_feedback: str | None
+
+
+class SectionSaveRequest(BaseModel):
+    """Auto-save edited content without marking the section complete."""
+    content: str
+
+
+class SectionApproveRequest(BaseModel):
+    """Approve a section with the (possibly edited) content."""
+    content: str
+
+
+class SaveDocumentResponse(BaseModel):
+    """Returned after approved sections are serialised into a new DocumentVersion."""
+    document_id: str
+    version_number: int
+    message: str
 
 
 # ── Session (shared base, used by Phase 2+ wizard) ───────────────────────────

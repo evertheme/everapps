@@ -15,7 +15,13 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import type { Document, GapAnalysisReport, Project } from "@/types";
+import type {
+  Document,
+  GapAnalysisReport,
+  Project,
+  SectionFillResponse,
+  SaveDocumentResponse,
+} from "@/types";
 import { GapAnalysisPanel } from "@/components/requirements/GapAnalysisPanel";
 
 export default function RequirementsPage() {
@@ -29,12 +35,10 @@ export default function RequirementsPage() {
     queryFn: async () => (await api.get(`/projects/${projectId}`)).data,
   });
 
-  const { data: documents = [], isLoading: docsLoading } = useQuery<Document[]>(
-    {
-      queryKey: ["documents", projectId],
-      queryFn: async () => (await api.get(`/documents/${projectId}/`)).data,
-    }
-  );
+  const { data: documents = [], isLoading: docsLoading } = useQuery<Document[]>({
+    queryKey: ["documents", projectId],
+    queryFn: async () => (await api.get(`/documents/${projectId}/`)).data,
+  });
 
   const {
     data: report,
@@ -45,11 +49,12 @@ export default function RequirementsPage() {
     queryFn: async () =>
       (await api.get(`/req-assistant/${projectId}/gap-analysis/report`)).data,
     retry: (failureCount, error: unknown) => {
-      // Don't retry on 404 — just means no report yet
       const status = (error as { response?: { status?: number } })?.response?.status;
       return status !== 404 && failureCount < 2;
     },
   });
+
+  // ── Phase 1: run analysis ──────────────────────────────────────────────────
 
   const gapAnalysisMutation = useMutation({
     mutationFn: (documentId: string) =>
@@ -70,6 +75,42 @@ export default function RequirementsPage() {
   const handleRunAnalysis = (docId: string) => {
     setRunningForDocId(docId);
     gapAnalysisMutation.mutate(docId);
+  };
+
+  // ── Phase 2: fill / approve / save ────────────────────────────────────────
+
+  const handleFill = async (sectionType: string): Promise<string> => {
+    const res = await api.post<SectionFillResponse>(
+      `/req-assistant/${projectId}/gap-analysis/section/${sectionType}/fill`
+    );
+    return res.data.content;
+  };
+
+  const handleApprove = async (
+    sectionType: string,
+    content: string
+  ): Promise<void> => {
+    await api.post(
+      `/req-assistant/${projectId}/gap-analysis/section/${sectionType}/approve`,
+      { content }
+    );
+    // Silently refresh so report.can_save reflects the approval
+    qc.invalidateQueries({ queryKey: ["gap-analysis-report", projectId] });
+  };
+
+  const handleSaveDocument = async (): Promise<{
+    document_id: string;
+    version_number: number;
+  }> => {
+    const res = await api.post<SaveDocumentResponse>(
+      `/req-assistant/${projectId}/gap-analysis/save-document`
+    );
+    toast.success(
+      `Saved as version ${res.data.version_number} — ready for story generation.`
+    );
+    // Refresh the doc list so the new version is visible
+    qc.invalidateQueries({ queryKey: ["documents", projectId] });
+    return { document_id: res.data.document_id, version_number: res.data.version_number };
   };
 
   const isRunning = gapAnalysisMutation.isPending;
@@ -101,8 +142,8 @@ export default function RequirementsPage() {
             Requirements Document Assistant
           </h1>
           <p className="text-gray-500 mt-1 text-sm">
-            Analyse your requirements document for completeness against the
-            industry-standard 12-section taxonomy.
+            Analyse your document for completeness and fill any gaps with AI
+            before generating your story backlog.
           </p>
         </div>
         <button
@@ -146,16 +187,16 @@ export default function RequirementsPage() {
                 className="text-brand-600 hover:underline"
               >
                 Upload one on the project page.
-              </button>
-              {" "}Don&apos;t have one yet?{" "}
+              </button>{" "}
+              Don&apos;t have one yet?{" "}
               <a
                 href="/templates/requirements-template.docx"
                 download="requirements-template.docx"
                 className="text-brand-600 hover:underline"
               >
                 Download our template
-              </a>
-              {" "}to get started.
+              </a>{" "}
+              to get started.
             </span>
           </div>
         ) : (
@@ -222,26 +263,32 @@ export default function RequirementsPage() {
               Refresh
             </button>
           </div>
-          <GapAnalysisPanel report={report} />
 
-          {/* Story generation CTA when document is sufficiently complete */}
-          {report.overall_score >= 60 && (
+          <GapAnalysisPanel
+            report={report}
+            onFill={handleFill}
+            onApprove={handleApprove}
+            onSaveDocument={handleSaveDocument}
+          />
+
+          {/* Story generation CTA — shown when document has been saved (has v2+) */}
+          {documents.some((d) => d.current_version >= 2) && (
             <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-4 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-brand-800">
-                  Document is ready for story generation
+                  Requirements document saved — ready for story generation
                 </p>
                 <p className="text-xs text-brand-600 mt-0.5">
-                  Overall completeness is {report.overall_score}% — good enough
-                  to generate a quality backlog.
+                  Select the saved version on the project page and click Generate
+                  Stories.
                 </p>
               </div>
               <button
-                onClick={() => router.push(`/projects/${projectId}/stories`)}
+                onClick={() => router.push(`/projects/${projectId}`)}
                 className="btn-primary text-sm shrink-0 flex items-center gap-1.5"
               >
                 <Sparkles className="w-4 h-4" />
-                Go to Stories
+                Go to Project
               </button>
             </div>
           )}

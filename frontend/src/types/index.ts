@@ -121,6 +121,7 @@ export interface ExportResult {
 
 export type GapStatus = "missing" | "thin" | "present";
 export type RequiredLevel = "required" | "recommended" | "optional";
+export type SectionApprovalStatus = "pending" | "in_progress" | "complete" | "skipped";
 
 export interface SectionTemplate {
   section_type: string;
@@ -140,6 +141,8 @@ export interface SectionStatus {
   completeness_score: number;
   ai_feedback: string | null;
   content: string;
+  /** Server-side approval status: pending | in_progress | complete | skipped */
+  status: SectionApprovalStatus;
 }
 
 export interface GapAnalysisReport {
@@ -149,4 +152,18 @@ export interface GapAnalysisReport {
   status: string;
   sections: SectionStatus[];
   created_at: string;
+  /** True when document_header and executive_summary are both approved */
+  can_save: boolean;
+}
+
+export interface SectionFillResponse {
+  section_type: string;
+  content: string;
+  ai_feedback: string | null;
+}
+
+export interface SaveDocumentResponse {
+  document_id: string;
+  version_number: number;
+  message: string;
 }
