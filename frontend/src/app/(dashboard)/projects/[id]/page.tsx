@@ -14,10 +14,12 @@ import {
   AlertTriangle,
   Clock,
   X,
+  FileSearch,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import type { Document, DocumentHints, Project } from "@/types";
+import type { Document, DocumentHints, GapAnalysisReport, Project } from "@/types";
+import { RequirementCompleteness } from "@/components/requirements/RequirementCompleteness";
 
 export default function ProjectPage() {
   const { id: projectId } = useParams<{ id: string }>();
@@ -37,6 +39,16 @@ export default function ProjectPage() {
   const { data: documents = [], isLoading } = useQuery<Document[]>({
     queryKey: ["documents", projectId],
     queryFn: async () => (await api.get(`/documents/${projectId}/`)).data,
+  });
+
+  const { data: gapReport } = useQuery<GapAnalysisReport>({
+    queryKey: ["gap-analysis-report", projectId],
+    queryFn: async () =>
+      (await api.get(`/req-assistant/${projectId}/gap-analysis/report`)).data,
+    retry: (failureCount, error: unknown) => {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      return status !== 404 && failureCount < 2;
+    },
   });
 
   const onDrop = useCallback(
@@ -252,6 +264,19 @@ export default function ProjectPage() {
             <p className="text-xs text-gray-500">View & edit stories</p>
           </div>
         </button>
+
+        <button
+          onClick={() => router.push(`/projects/${projectId}/requirements`)}
+          className="card p-5 text-left hover:shadow-md transition-shadow flex items-center gap-4"
+        >
+          <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+            <FileSearch className="w-5 h-5 text-purple-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">Requirements</p>
+            <p className="text-xs text-gray-500">Analyse document coverage</p>
+          </div>
+        </button>
       </div>
 
       <div className="mb-6">
@@ -331,6 +356,19 @@ export default function ProjectPage() {
           </div>
         )}
       </div>
+
+      {/* Requirement completeness widget — shown once a gap analysis exists */}
+      {gapReport && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Requirements Coverage
+          </h2>
+          <RequirementCompleteness
+            report={gapReport}
+            projectId={projectId}
+          />
+        </div>
+      )}
     </div>
   );
 }

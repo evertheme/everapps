@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 
 const FOOTER_LINKS: Record<string, { label: string; href: string }[]> = {
@@ -25,7 +26,7 @@ export default function MarketingFooter() {
           {/* Brand column */}
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="inline-block mb-4">
-              <img src="/images/brand/logo-light.png" alt="everapps" width={155} height={32} />
+              <Image src="/images/brand/logo-light.png" alt="everapps" width={155} height={32} />
             </Link>
             <p className="text-sm leading-relaxed">
               AI-powered requirements-to-backlog automation for modern product teams.
