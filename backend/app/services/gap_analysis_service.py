@@ -582,6 +582,7 @@ def save_wizard_document(
     desired_state_notes: str,
     features: list[dict],
     db: Session,
+    deploy_targets: list[str] | None = None,
 ) -> RequirementDocument:
     """
     Assemble a requirements document from wizard answers, persist it as a
@@ -642,6 +643,21 @@ def save_wizard_document(
 
     if desired_state_notes.strip():
         parts.append(f"**Desired Future State:**\n{desired_state_notes}\n")
+
+    _DEPLOY_TARGET_LABELS = {
+        "web":         "Web",
+        "ios":         "iOS",
+        "android":     "Android",
+        "desktop":     "Desktop",
+        "api_service": "API / Service",
+        "other":       "Other",
+    }
+    if deploy_targets:
+        label_list = ", ".join(
+            _DEPLOY_TARGET_LABELS.get(t, t) for t in deploy_targets
+        )
+        parts.append("### Deployment Targets\n")
+        parts.append(f"{label_list}\n")
 
     # Section 5 — Functional Requirements (features with priorities)
     _PRIORITY_LABELS = {
@@ -716,6 +732,15 @@ def parse_wizard_prefill(content: str) -> dict:
         "future feature": "future",
     }
 
+    _DEPLOY_TARGET_REVERSE = {
+        "web":          "web",
+        "ios":          "ios",
+        "android":      "android",
+        "desktop":      "desktop",
+        "api / service": "api_service",
+        "other":        "other",
+    }
+
     result: dict = {
         "product_name":        "",
         "description":         "",
@@ -725,6 +750,7 @@ def parse_wizard_prefill(content: str) -> dict:
         "current_state_type":  "new_product",
         "current_state_notes": "",
         "desired_state_notes": "",
+        "deploy_targets":      [],
         "features":            [],
     }
 
@@ -783,6 +809,16 @@ def parse_wizard_prefill(content: str) -> dict:
     else:
         result["current_state_notes"] = cs_body.strip()
 
+    # ── Deployment targets ────────────────────────────────────────────────────
+    dt_text = sub.get("deployment targets", "")
+    if dt_text:
+        deploy_targets = []
+        for label in dt_text.split(","):
+            key = _DEPLOY_TARGET_REVERSE.get(label.strip().lower())
+            if key:
+                deploy_targets.append(key)
+        result["deploy_targets"] = deploy_targets
+
     # ── Functional requirements table ────────────────────────────────────────
     fr_text = sections.get("functional requirements", "")
     features = []
@@ -812,6 +848,7 @@ def update_wizard_document(
     desired_state_notes: str,
     features: list[dict],
     db: Session,
+    deploy_targets: list[str] | None = None,
 ) -> tuple["RequirementDocument", "DocumentVersion"]:
     """
     Re-assemble a requirements document from updated wizard answers and save it
@@ -871,6 +908,21 @@ def update_wizard_document(
         parts.append(f"{current_state_notes}\n")
     if desired_state_notes.strip():
         parts.append(f"**Desired Future State:**\n{desired_state_notes}\n")
+
+    _DEPLOY_TARGET_LABELS = {
+        "web":         "Web",
+        "ios":         "iOS",
+        "android":     "Android",
+        "desktop":     "Desktop",
+        "api_service": "API / Service",
+        "other":       "Other",
+    }
+    if deploy_targets:
+        label_list = ", ".join(
+            _DEPLOY_TARGET_LABELS.get(t, t) for t in deploy_targets
+        )
+        parts.append("### Deployment Targets\n")
+        parts.append(f"{label_list}\n")
 
     non_empty = [f for f in features if str(f.get("description", "")).strip()]
     if non_empty:

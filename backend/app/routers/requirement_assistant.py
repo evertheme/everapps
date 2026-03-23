@@ -581,6 +581,7 @@ def generate_wizard_document(
         desired_state_notes=payload.desired_state_notes,
         features=[f.model_dump() for f in payload.features],
         db=db,
+        deploy_targets=payload.deploy_targets,
     )
 
     return WizardGenerateOut(
@@ -659,6 +660,7 @@ def update_wizard_document_endpoint(
             desired_state_notes=payload.desired_state_notes,
             features=[f.model_dump() for f in payload.features],
             db=db,
+            deploy_targets=payload.deploy_targets,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
