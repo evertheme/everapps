@@ -142,27 +142,58 @@ npm run test:coverage           # with coverage report
 | PM integrations | JIRA, Asana, Trello, Azure DevOps |
 | Infrastructure | Docker Compose + Nginx (local) · Railway (production) |
 
+## CI/CD Pipeline
+
+### Branch strategy
+
+| Branch | Railway Environment | Deploys on push |
+|---|---|---|
+| `develop` | development | Yes |
+| `staging` | staging | Yes |
+| `main` | production | Yes |
+
+Typical promotion flow:
+
+1. Create a feature branch off `develop`
+2. Open a PR → GitHub Actions runs backend and frontend tests
+3. Merge into `develop` → Railway deploys to the development environment
+4. Open a PR from `develop` → `staging` → Railway deploys to staging
+5. Open a PR from `staging` → `main` → Railway deploys to production
+
+### GitHub Actions CI
+
+On every push and pull request targeting `develop`, `staging`, or `main`:
+
+- **Backend** — `pytest` with SQLite in-memory (no external services needed)
+- **Frontend** — `next lint` then `jest`
+
+Workflow file: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+
+Configure GitHub branch protection rules on `develop`, `staging`, and `main` to require the `CI` status check before merging.
+
 ## Deploying to Railway
 
 The repo is structured as a Railway monorepo with two services (`backend/` and `frontend/`) each containing a `railway.toml` and `Dockerfile`. Set the **Root Directory** for each service to `backend` or `frontend` accordingly.
 
+Create one Railway project with three environments — **development**, **staging**, and **production** — each watching the corresponding Git branch (`develop`, `staging`, `main`). Every environment gets its own Postgres instance and its own set of environment variables.
+
 ### Required environment variables
 
-**Backend service**
+**Backend service** (set per environment)
 
 | Variable | Value |
 |---|---|
-| `SECRET_KEY` | Random string ≥ 32 chars |
-| `ENCRYPTION_KEY` | Fernet key (see above) |
+| `SECRET_KEY` | Random string ≥ 32 chars — unique per environment |
+| `ENCRYPTION_KEY` | Fernet key (see above) — unique per environment |
 | `PGHOST` | `${{Postgres.PGHOST}}` |
 | `PGPORT` | `${{Postgres.PGPORT}}` |
 | `PGUSER` | `${{Postgres.PGUSER}}` |
 | `PGPASSWORD` | `${{Postgres.POSTGRES_PASSWORD}}` |
 | `PGDATABASE` | `${{Postgres.POSTGRES_DB}}` |
-| `CORS_ORIGINS` | `https://yourdomain.com,https://www.yourdomain.com` |
+| `CORS_ORIGINS` | `https://yourdomain.com` (public URL for that environment) |
 | `OPENAI_API_KEY` | Your OpenAI key (or leave blank and configure per-user in the UI) |
 
-**Frontend service**
+**Frontend service** (set per environment)
 
 | Variable | Value |
 |---|---|
