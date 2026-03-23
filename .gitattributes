@@ -29,6 +29,7 @@ Dockerfile*     text eol=lf
 *.sql   text eol=lf
 
 # Binary files — never touch line endings
+*.docx  binary
 *.png   binary
 *.jpg   binary
 *.jpeg  binary

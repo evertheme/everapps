@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   FileText,
   Sparkles,
+  Download,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
@@ -115,9 +116,19 @@ export default function RequirementsPage() {
 
       {/* Document picker */}
       <div className="card p-5 mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">
-          Select a document to analyse
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-700">
+            Select a document to analyse
+          </h2>
+          <a
+            href="/templates/requirements-template.docx"
+            download="requirements-template.docx"
+            className="btn-secondary text-xs flex items-center gap-1.5"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Download template
+          </a>
+        </div>
 
         {docsLoading ? (
           <div className="space-y-2">
@@ -126,8 +137,8 @@ export default function RequirementsPage() {
             ))}
           </div>
         ) : documents.length === 0 ? (
-          <div className="flex items-center gap-3 text-sm text-gray-500 py-4">
-            <FileText className="w-5 h-5 text-gray-300" />
+          <div className="flex items-start gap-3 text-sm text-gray-500 py-4">
+            <FileText className="w-5 h-5 text-gray-300 shrink-0 mt-0.5" />
             <span>
               No documents uploaded yet.{" "}
               <button
@@ -136,6 +147,15 @@ export default function RequirementsPage() {
               >
                 Upload one on the project page.
               </button>
+              {" "}Don&apos;t have one yet?{" "}
+              <a
+                href="/templates/requirements-template.docx"
+                download="requirements-template.docx"
+                className="text-brand-600 hover:underline"
+              >
+                Download our template
+              </a>
+              {" "}to get started.
             </span>
           </div>
         ) : (
