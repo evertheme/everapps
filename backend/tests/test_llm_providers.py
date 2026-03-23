@@ -56,13 +56,25 @@ class TestOpenAIProvider:
         assert result == "Generated text"
 
 
+def _make_mock_provider(return_value: str) -> AsyncMock:
+    """Return an AsyncMock provider that looks enough like a real provider
+    for resolve_chunk_size to pick a large context window, keeping test
+    documents as a single chunk so mocks are called exactly once."""
+    mock_provider = AsyncMock()
+    mock_provider.provider_name = "openai"
+    mock_provider.config.model = "gpt-4o"
+    mock_provider.complete.return_value = return_value
+    return mock_provider
+
+
 class TestStoryGenerator:
     @pytest.mark.asyncio
     async def test_generate_parses_valid_json(self):
         from app.services.story_generator import generate_stories
 
-        mock_provider = AsyncMock()
-        mock_provider.complete.return_value = '[{"title":"Login","description":"As a user...","acceptance_criteria":"1. Valid login","priority":"high","story_points":3}]'
+        mock_provider = _make_mock_provider(
+            '[{"title":"Login","description":"As a user...","acceptance_criteria":"1. Valid login","priority":"high","story_points":3}]'
+        )
 
         result = await generate_stories("User needs to log in.", mock_provider)
         assert len(result) == 1
@@ -72,8 +84,9 @@ class TestStoryGenerator:
     async def test_generate_strips_markdown_fences(self):
         from app.services.story_generator import generate_stories
 
-        mock_provider = AsyncMock()
-        mock_provider.complete.return_value = '```json\n[{"title":"T","description":"D","acceptance_criteria":"A","priority":"medium","story_points":2}]\n```'
+        mock_provider = _make_mock_provider(
+            '```json\n[{"title":"T","description":"D","acceptance_criteria":"A","priority":"medium","story_points":2}]\n```'
+        )
 
         result = await generate_stories("Requirement text.", mock_provider)
         assert len(result) == 1
@@ -82,8 +95,7 @@ class TestStoryGenerator:
     async def test_generate_raises_on_invalid_json(self):
         from app.services.story_generator import generate_stories
 
-        mock_provider = AsyncMock()
-        mock_provider.complete.return_value = "This is not JSON at all."
+        mock_provider = _make_mock_provider("This is not JSON at all.")
 
         with pytest.raises(ValueError, match="valid JSON"):
             await generate_stories("Requirements.", mock_provider)
