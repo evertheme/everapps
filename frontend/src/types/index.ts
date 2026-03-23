@@ -116,3 +116,37 @@ export interface ExportResult {
   external_url: string | null;
   error: string | null;
 }
+
+// ── Requirements Document Assistant ──────────────────────────────────────────
+
+export type GapStatus = "missing" | "thin" | "present";
+export type RequiredLevel = "required" | "recommended" | "optional";
+
+export interface SectionTemplate {
+  section_type: string;
+  display_name: string;
+  standard_source: string;
+  required_level: RequiredLevel;
+  order: number;
+  content_standard: string;
+  prompt_questions: string[];
+}
+
+export interface SectionStatus {
+  section_type: string;
+  display_name: string;
+  required_level: RequiredLevel;
+  gap_status: GapStatus;
+  completeness_score: number;
+  ai_feedback: string | null;
+  content: string;
+}
+
+export interface GapAnalysisReport {
+  session_id: string;
+  document_id: string;
+  overall_score: number;
+  status: string;
+  sections: SectionStatus[];
+  created_at: string;
+}

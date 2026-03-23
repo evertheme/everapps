@@ -5,6 +5,8 @@ Convert requirements documents into reviewed, version-controlled backlogs and pu
 ## Features
 
 - Upload requirements documents (`.docx`, `.pdf`, `.txt`, `.md`)
+- **Requirements Document Assistant** — AI-powered gap analysis maps your document against an industry-standard 12-section taxonomy (IEEE 29148 / BRD / PRD), scores each section for completeness, and highlights missing or thin content before you generate stories
+- Downloadable requirements document template (`.docx`) pre-structured to the 12-section taxonomy — fill it in and upload it straight back
 - Structure-aware processing that detects and preserves document sections
 - Full document support — large documents are automatically split into provider-optimised chunks so nothing is truncated
 - AI-powered user story generation (OpenAI, Anthropic, Azure OpenAI, Ollama)
@@ -131,6 +133,7 @@ npm run test:coverage           # with coverage report
 | Utilities | Fernet encrypt/decrypt | `cn()`, `formatDate()`, color maps |
 | API client | — | Token injection, error propagation |
 | Review UI | — | ReviewPanel component |
+| Requirements assistant | taxonomy service (11 tests), gap analysis service with mocked LLM (4 tests), API endpoints (9 tests) | GapAnalysisPanel component (14 tests), RequirementCompleteness widget (12 tests) |
 
 ## Tech Stack
 
@@ -162,14 +165,20 @@ Typical promotion flow:
 
 ### GitHub Actions CI
 
-On every push and pull request targeting `develop`, `staging`, or `main`:
+Two workflows run automatically:
+
+**`ci.yml`** — on every push and pull request targeting `develop`, `staging`, or `main`:
 
 - **Backend** — `pytest` with SQLite in-memory (no external services needed)
 - **Frontend** — `next lint` then `jest`
 
-Workflow file: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-
 Configure GitHub branch protection rules on `develop`, `staging`, and `main` to require the `CI` status check before merging.
+
+**`feature-branch-tests.yml`** — on every push to any branch *other than* `develop`, `staging`, and `main`:
+
+- Runs the same backend and frontend test suites so failures are caught before a PR is opened.
+
+Workflow files: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) · [`.github/workflows/feature-branch-tests.yml`](.github/workflows/feature-branch-tests.yml)
 
 ## Deploying to Railway
 
@@ -209,10 +218,24 @@ The backend `start.sh` script:
 
 This means the healthcheck at `/health` only becomes reachable once migrations have completed — no race conditions.
 
+## Requirements Document Template
+
+A pre-formatted `.docx` template aligned to the 12-section taxonomy is served statically at `/templates/requirements-template.docx` and linked from the Requirements page in the app.
+
+To regenerate it after changing the taxonomy (e.g. adding sections):
+
+```bash
+pip install python-docx       # one-time
+python scripts/generate_requirements_template.py
+```
+
+The script overwrites `frontend/public/templates/requirements-template.docx`.
+
 ## Documentation
 
 | Document | Description |
 |---|---|
+| [`docs/requirements-document-assistant.md`](docs/requirements-document-assistant.md) | Specification for the AI-powered Requirements Document Assistant (all phases) |
 | [`docs/large-document-support.md`](docs/large-document-support.md) | Architecture and implementation of large document chunking |
 | [`docs/deployment-cost-analysis.md`](docs/deployment-cost-analysis.md) | Infrastructure cost breakdown and scaling considerations |
 | [`docs/future-enhancements.md`](docs/future-enhancements.md) | Roadmap and planned features |

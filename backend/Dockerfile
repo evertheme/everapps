@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod +x start.sh
+# Strip Windows CRLF line endings that break the shebang on Linux
+RUN sed -i 's/\r$//' start.sh && chmod +x start.sh
 
 EXPOSE 8000
 CMD ["./start.sh"]

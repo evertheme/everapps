@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import auth, projects, documents, stories, settings, integrations
+from app.routers import auth, projects, documents, stories, settings, integrations, requirement_assistant
 
 settings_obj = get_settings()
 
@@ -29,6 +29,7 @@ app.include_router(documents.router, prefix=API_PREFIX)
 app.include_router(stories.router, prefix=API_PREFIX)
 app.include_router(settings.router, prefix=API_PREFIX)
 app.include_router(integrations.router, prefix=API_PREFIX)
+app.include_router(requirement_assistant.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["health"])
