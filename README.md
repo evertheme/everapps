@@ -55,9 +55,12 @@ Copy `.env.example` and fill in the required values. All variables with defaults
 | Variable | Required | Description |
 |---|---|---|
 | `SECRET_KEY` | Yes | JWT signing secret (min 32 chars) |
-| `ENCRYPTION_KEY` | Yes | Fernet key for encrypting PM credentials |
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `ENCRYPTION_KEY` | Yes | Fernet key for encrypting PM credentials — generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `DATABASE_URL` | Yes* | Full PostgreSQL connection string — `postgresql://user:pass@host:5432/db` |
+| `CORS_ORIGINS` | No | Comma-separated allowed origins (default: `http://localhost:3000,http://localhost`) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | No | JWT lifetime (default: `60`) |
+
+\* `DATABASE_URL` can be omitted if the individual `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, and `PGDATABASE` variables are set — the app constructs the URL from them automatically. This is the recommended approach on Railway.
 
 ### LLM — Server defaults
 
@@ -134,10 +137,46 @@ npm run test:coverage           # with coverage report
 | Layer | Technology |
 |---|---|
 | Backend | Python, FastAPI, SQLAlchemy, Alembic, PostgreSQL |
-| Frontend | Next.js 14, TypeScript, Tailwind CSS |
+| Frontend | Next.js 16, TypeScript, Tailwind CSS |
 | LLM providers | OpenAI, Anthropic, Azure OpenAI, Ollama |
 | PM integrations | JIRA, Asana, Trello, Azure DevOps |
-| Infrastructure | Docker Compose, Nginx |
+| Infrastructure | Docker Compose + Nginx (local) · Railway (production) |
+
+## Deploying to Railway
+
+The repo is structured as a Railway monorepo with two services (`backend/` and `frontend/`) each containing a `railway.toml` and `Dockerfile`. Set the **Root Directory** for each service to `backend` or `frontend` accordingly.
+
+### Required environment variables
+
+**Backend service**
+
+| Variable | Value |
+|---|---|
+| `SECRET_KEY` | Random string ≥ 32 chars |
+| `ENCRYPTION_KEY` | Fernet key (see above) |
+| `PGHOST` | `${{Postgres.PGHOST}}` |
+| `PGPORT` | `${{Postgres.PGPORT}}` |
+| `PGUSER` | `${{Postgres.PGUSER}}` |
+| `PGPASSWORD` | `${{Postgres.POSTGRES_PASSWORD}}` |
+| `PGDATABASE` | `${{Postgres.POSTGRES_DB}}` |
+| `CORS_ORIGINS` | `https://yourdomain.com,https://www.yourdomain.com` |
+| `OPENAI_API_KEY` | Your OpenAI key (or leave blank and configure per-user in the UI) |
+
+**Frontend service**
+
+| Variable | Value |
+|---|---|
+| `BACKEND_URL` | `http://<backend-private-domain>:<port>` — find the private domain in the backend service → Settings → Private Networking |
+
+### How startup works
+
+The backend `start.sh` script:
+1. Constructs `DATABASE_URL` from `PG*` variables if not already set
+2. Waits up to 60 s for the database to accept connections
+3. Runs `alembic upgrade head`
+4. Starts Uvicorn
+
+This means the healthcheck at `/health` only becomes reachable once migrations have completed — no race conditions.
 
 ## Documentation
 
