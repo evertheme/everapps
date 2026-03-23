@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, model_validator
 from functools import lru_cache
 
 
@@ -10,8 +10,32 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
 
-    # Database
-    database_url: str
+    # Database — full URL is preferred; individual PG* vars are the fallback.
+    # Railway's Postgres plugin exposes PGHOST, PGPORT, PGUSER, PGPASSWORD,
+    # PGDATABASE as simple (non-nested) reference variables, which are far
+    # more reliable to reference than the pre-built DATABASE_URL chain.
+    database_url: str = ""
+    pghost: str = ""
+    pgport: int = 5432
+    pguser: str = ""
+    pgpassword: str = ""
+    pgdatabase: str = ""
+
+    @model_validator(mode="after")
+    def resolve_database_url(self) -> "Settings":
+        url = self.database_url.replace("postgres://", "postgresql://", 1)
+        if not url and self.pghost:
+            url = (
+                f"postgresql://{self.pguser}:{self.pgpassword}"
+                f"@{self.pghost}:{self.pgport}/{self.pgdatabase}"
+            )
+        if not url:
+            raise ValueError(
+                "Database not configured: set DATABASE_URL or "
+                "PGHOST / PGPORT / PGUSER / PGPASSWORD / PGDATABASE"
+            )
+        self.database_url = url
+        return self
 
     # Encryption key for PM credentials (Fernet)
     encryption_key: str
