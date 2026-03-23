@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useCallback, useEffect } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
@@ -18,10 +18,15 @@ import { api } from "@/lib/api";
 import type {
   Project,
   WizardSuggestions,
+  WizardFeatureSuggestions,
   WizardGenerateResponse,
+  WizardUpdateResponse,
+  WizardPrefillData,
   CurrentStateType,
+  WizardFeature,
+  FeaturePriority,
 } from "@/types";
-import { CURRENT_STATE_OPTIONS as STATE_OPTIONS } from "@/types";
+import { CURRENT_STATE_OPTIONS as STATE_OPTIONS, FEATURE_PRIORITY_OPTIONS } from "@/types";
 
 // ── Wizard state ──────────────────────────────────────────────────────────────
 
@@ -38,7 +43,7 @@ interface WizardData {
   currentStateNotes: string;
   desiredStateNotes: string;
   // Step 4
-  mustHaveFeatures: string[];
+  features: WizardFeature[];
 }
 
 const INITIAL: WizardData = {
@@ -50,7 +55,7 @@ const INITIAL: WizardData = {
   currentStateType: "new_product",
   currentStateNotes: "",
   desiredStateNotes: "",
-  mustHaveFeatures: [],
+  features: [],
 };
 
 const STEPS = [
@@ -444,64 +449,172 @@ function Step3({
   );
 }
 
-// ── Step 4: Must-Have Features ────────────────────────────────────────────────
+// ── Step 4: Features ─────────────────────────────────────────────────────────
+
+const PRIORITY_COLORS: Record<FeaturePriority, string> = {
+  must_have:    "bg-red-50 text-red-700 border-red-200",
+  nice_to_have: "bg-amber-50 text-amber-700 border-amber-200",
+  future:       "bg-blue-50 text-blue-700 border-blue-200",
+};
 
 function Step4({
   data,
   onChange,
+  featureSuggestions,
+  loadingFeatureSuggestions,
+  onGetFeatureSuggestions,
 }: {
   data: WizardData;
   onChange: (patch: Partial<WizardData>) => void;
+  featureSuggestions: WizardFeature[] | null;
+  loadingFeatureSuggestions: boolean;
+  onGetFeatureSuggestions: () => void;
 }) {
-  const updateFeature = (index: number, value: string) => {
-    const updated = [...data.mustHaveFeatures];
-    updated[index] = value;
-    onChange({ mustHaveFeatures: updated });
+  const updateDescription = (index: number, value: string) => {
+    const updated = data.features.map((f, i) =>
+      i === index ? { ...f, description: value } : f
+    );
+    onChange({ features: updated });
   };
 
-  const addFeature = () => {
-    onChange({ mustHaveFeatures: [...data.mustHaveFeatures, ""] });
+  const updatePriority = (index: number, value: FeaturePriority) => {
+    const updated = data.features.map((f, i) =>
+      i === index ? { ...f, priority: value } : f
+    );
+    onChange({ features: updated });
+  };
+
+  const addFeature = (description = "", priority: FeaturePriority = "must_have") => {
+    onChange({ features: [...data.features, { description, priority }] });
   };
 
   const removeFeature = (index: number) => {
-    onChange({
-      mustHaveFeatures: data.mustHaveFeatures.filter((_, i) => i !== index),
-    });
+    onChange({ features: data.features.filter((_, i) => i !== index) });
   };
+
+  const applyFeatureSuggestion = (feat: WizardFeature) => {
+    // Only apply if not already present
+    const alreadyAdded = data.features.some(
+      (f) => f.description.trim().toLowerCase() === feat.description.trim().toLowerCase()
+    );
+    if (!alreadyAdded) {
+      addFeature(feat.description, feat.priority as FeaturePriority);
+    }
+  };
+
+  const pendingSuggestions = featureSuggestions?.filter(
+    (s) =>
+      !data.features.some(
+        (f) => f.description.trim().toLowerCase() === s.description.trim().toLowerCase()
+      )
+  ) ?? [];
+
+  const hasFeatures = data.features.length > 0;
 
   return (
     <div className="space-y-5">
-      <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-600">
-        List the capabilities the system <strong>must</strong> deliver for the
-        product to be considered successful. These will become{" "}
-        <em>Must-have</em> functional requirements.{" "}
-        <span className="text-gray-400">(Optional — you can skip this step.)</span>
-      </div>
-
-      {data.mustHaveFeatures.length === 0 ? (
+      {/* Header row with AI button */}
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-sm text-gray-600">
+          List the capabilities the system should deliver. Assign a priority to
+          each one. <span className="text-red-500">*</span>
+        </p>
         <button
           type="button"
-          onClick={addFeature}
+          onClick={onGetFeatureSuggestions}
+          disabled={loadingFeatureSuggestions}
+          className="btn-secondary text-xs flex items-center gap-1.5 shrink-0"
+        >
+          {loadingFeatureSuggestions ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Thinking…
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5" />
+              Get AI suggestions
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* AI suggestion chips */}
+      {pendingSuggestions.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
+            AI suggestions — click to add
+          </p>
+          <div className="grid grid-cols-1 gap-1.5">
+            {pendingSuggestions.map((sug, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => applyFeatureSuggestion(sug)}
+                className="flex items-center gap-2 text-left w-full rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 hover:bg-brand-100 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5 shrink-0 text-brand-400" />
+                <span className="text-sm text-brand-800 flex-1 leading-snug">
+                  {sug.description}
+                </span>
+                <span
+                  className={`text-xs font-medium px-2 py-0.5 rounded-full border shrink-0 ${PRIORITY_COLORS[sug.priority as FeaturePriority]}`}
+                >
+                  {FEATURE_PRIORITY_OPTIONS.find((o) => o.value === sug.priority)?.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Feature list */}
+      {!hasFeatures && !featureSuggestions && (
+        <button
+          type="button"
+          onClick={() => addFeature()}
           className="flex items-center gap-2 text-sm text-brand-600 hover:text-brand-700"
         >
           <Plus className="w-4 h-4" />
-          Add a must-have feature
+          Add a feature
         </button>
-      ) : (
-        <div className="space-y-2">
-          {data.mustHaveFeatures.map((feat, i) => (
+      )}
+
+      {hasFeatures && (
+        <div className="space-y-3">
+          {/* Column headers */}
+          <div className="flex gap-2 items-center px-0.5">
+            <span className="text-xs text-gray-400 font-mono w-12 shrink-0">ID</span>
+            <span className="text-xs text-gray-400 flex-1">Description</span>
+            <span className="text-xs text-gray-400 w-36 shrink-0">Priority</span>
+            <span className="w-5" />
+          </div>
+
+          {data.features.map((feat, i) => (
             <div key={i} className="flex gap-2 items-center">
               <span className="text-xs text-gray-400 font-mono w-12 shrink-0">
                 FR-{String(i + 1).padStart(3, "0")}
               </span>
               <input
                 type="text"
-                value={feat}
-                onChange={(e) => updateFeature(i, e.target.value)}
+                value={feat.description}
+                onChange={(e) => updateDescription(i, e.target.value)}
                 placeholder="e.g. Book appointments via a public booking page"
                 className="input flex-1"
-                autoFocus={i === data.mustHaveFeatures.length - 1}
+                autoFocus={i === data.features.length - 1 && feat.description === ""}
               />
+              <select
+                value={feat.priority}
+                onChange={(e) => updatePriority(i, e.target.value as FeaturePriority)}
+                className={`input w-36 shrink-0 text-xs font-medium border rounded-md py-1.5 px-2 ${PRIORITY_COLORS[feat.priority]}`}
+                aria-label={`Priority for feature ${i + 1}`}
+              >
+                {FEATURE_PRIORITY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 onClick={() => removeFeature(i)}
@@ -514,13 +627,20 @@ function Step4({
           ))}
           <button
             type="button"
-            onClick={addFeature}
+            onClick={() => addFeature()}
             className="flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 mt-1"
           >
             <Plus className="w-3.5 h-3.5" />
             Add another feature
           </button>
         </div>
+      )}
+
+      {/* Validation hint */}
+      {!hasFeatures && featureSuggestions !== null && (
+        <p className="text-xs text-red-500">
+          Add at least one feature to continue.
+        </p>
       )}
     </div>
   );
@@ -531,6 +651,9 @@ function Step4({
 export default function WizardPage() {
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const documentId = searchParams.get("documentId");
+  const isUpdate = Boolean(documentId);
 
   const { data: project } = useQuery<Project>({
     queryKey: ["project", projectId],
@@ -539,25 +662,63 @@ export default function WizardPage() {
 
   const [step, setStep] = useState(1);
   const [data, setData] = useState<WizardData>(INITIAL);
+  const [prefillLoading, setPrefillLoading] = useState(isUpdate);
   const [suggestions, setSuggestions] = useState<WizardSuggestions | null>(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [featureSuggestions, setFeatureSuggestions] = useState<WizardFeatureSuggestions | null>(null);
+  const [loadingFeatureSuggestions, setLoadingFeatureSuggestions] = useState(false);
   const [generating, setGenerating] = useState(false);
 
   const onChange = useCallback((patch: Partial<WizardData>) => {
     setData((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  // ── Step 1 validation
+  // Pre-populate wizard when editing an existing document
+  useEffect(() => {
+    if (!documentId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<WizardPrefillData>(
+          `/req-assistant/${projectId}/wizard/prefill/${documentId}`
+        );
+        if (!cancelled) {
+          const p = res.data;
+          setData({
+            productName: p.product_name,
+            description: p.description,
+            executiveSummary: p.executive_summary,
+            businessProblem: p.business_problem,
+            businessObjectives:
+              p.business_objectives.length > 0 ? p.business_objectives : ["", "", ""],
+            currentStateType: p.current_state_type || "new_product",
+            currentStateNotes: p.current_state_notes,
+            desiredStateNotes: p.desired_state_notes,
+            features: p.features,
+          });
+        }
+      } catch {
+        // Pre-fill failed silently — user can fill in manually
+      } finally {
+        if (!cancelled) setPrefillLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [documentId, projectId]);
+
+  // ── Step validations
   const step1Valid = data.productName.trim().length > 0 && data.description.trim().length > 0;
-  // ── Step 2 validation
   const step2Valid = data.executiveSummary.trim().length > 0;
-  // ── Step 3 validation
   const step3Valid =
     data.businessProblem.trim().length > 0 &&
     data.businessObjectives.some((o) => o.trim().length > 0);
+  const step4Valid = data.features.some((f) => f.description.trim().length > 0);
 
   const canAdvance =
-    step === 1 ? step1Valid : step === 2 ? step2Valid : step === 3 ? step3Valid : true;
+    step === 1 ? step1Valid
+    : step === 2 ? step2Valid
+    : step === 3 ? step3Valid
+    : step4Valid;
 
   const handleGetSuggestions = async () => {
     setLoadingSuggestions(true);
@@ -578,27 +739,57 @@ export default function WizardPage() {
     }
   };
 
-  const handleGenerate = async () => {
-    setGenerating(true);
+  const handleGetFeatureSuggestions = async () => {
+    setLoadingFeatureSuggestions(true);
     try {
-      await api.post<WizardGenerateResponse>(
-        `/req-assistant/${projectId}/wizard/generate`,
+      const res = await api.post<WizardFeatureSuggestions>(
+        `/req-assistant/${projectId}/wizard/feature-suggestions`,
         {
           product_name: data.productName,
           description: data.description,
           executive_summary: data.executiveSummary,
           business_problem: data.businessProblem,
           business_objectives: data.businessObjectives.filter((o) => o.trim()),
-          current_state_type: data.currentStateType,
-          current_state_notes: data.currentStateNotes,
-          desired_state_notes: data.desiredStateNotes,
-          must_have_features: data.mustHaveFeatures.filter((f) => f.trim()),
         }
       );
-      toast.success("Requirements document created!");
+      setFeatureSuggestions(res.data);
+    } catch {
+      toast.error("Could not generate feature suggestions — check your LLM settings");
+    } finally {
+      setLoadingFeatureSuggestions(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    const body = {
+      product_name: data.productName,
+      description: data.description,
+      executive_summary: data.executiveSummary,
+      business_problem: data.businessProblem,
+      business_objectives: data.businessObjectives.filter((o) => o.trim()),
+      current_state_type: data.currentStateType,
+      current_state_notes: data.currentStateNotes,
+      desired_state_notes: data.desiredStateNotes,
+      features: data.features.filter((f) => f.description.trim()),
+    };
+    try {
+      if (isUpdate && documentId) {
+        const res = await api.post<WizardUpdateResponse>(
+          `/req-assistant/${projectId}/wizard/update/${documentId}`,
+          body
+        );
+        toast.success(`Saved as version ${res.data.version_number}`);
+      } else {
+        await api.post<WizardGenerateResponse>(
+          `/req-assistant/${projectId}/wizard/generate`,
+          body
+        );
+        toast.success("Requirements document created!");
+      }
       router.push(`/projects/${projectId}`);
     } catch {
-      toast.error("Generation failed — please try again");
+      toast.error(isUpdate ? "Update failed — please try again" : "Generation failed — please try again");
     } finally {
       setGenerating(false);
     }
@@ -606,6 +797,15 @@ export default function WizardPage() {
 
   return (
     <div className="p-8 max-w-2xl mx-auto">
+      {/* Loading overlay while prefill is fetching */}
+      {prefillLoading && (
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-gray-400">
+          <Loader2 className="w-8 h-8 animate-spin text-brand-500" />
+          <p className="text-sm">Loading document…</p>
+        </div>
+      )}
+
+      {!prefillLoading && <>
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
         <button onClick={() => router.push("/dashboard")} className="hover:text-gray-600">
@@ -619,7 +819,9 @@ export default function WizardPage() {
           {project?.name ?? "…"}
         </button>
         <span>/</span>
-        <span className="text-gray-700 font-medium">Requirements Wizard</span>
+        <span className="text-gray-700 font-medium">
+          {isUpdate ? "Edit with Wizard" : "Requirements Wizard"}
+        </span>
       </div>
 
       {/* Title */}
@@ -629,11 +831,12 @@ export default function WizardPage() {
         </div>
         <div>
           <h1 className="text-xl font-bold text-gray-900">
-            Requirements Wizard
+            {isUpdate ? "Edit with Wizard" : "Requirements Wizard"}
           </h1>
           <p className="text-sm text-gray-500">
-            Answer a few questions and we&apos;ll generate a starter requirements
-            document.
+            {isUpdate
+              ? "Update your answers and save a new version of the document."
+              : "Answer a few questions and we\u2019ll generate a starter requirements document."}
           </p>
         </div>
       </div>
@@ -646,7 +849,7 @@ export default function WizardPage() {
           {step === 1 && "Step 1 — Product overview"}
           {step === 2 && "Step 2 — Executive summary"}
           {step === 3 && "Step 3 — Project context & objectives"}
-          {step === 4 && "Step 4 — Must-have features"}
+          {step === 4 && "Step 4 — Features *"}
         </h2>
 
         {step === 1 && <Step1 data={data} onChange={onChange} />}
@@ -660,7 +863,15 @@ export default function WizardPage() {
             onGetSuggestions={handleGetSuggestions}
           />
         )}
-        {step === 4 && <Step4 data={data} onChange={onChange} />}
+        {step === 4 && (
+          <Step4
+            data={data}
+            onChange={onChange}
+            featureSuggestions={featureSuggestions?.features ?? null}
+            loadingFeatureSuggestions={loadingFeatureSuggestions}
+            onGetFeatureSuggestions={handleGetFeatureSuggestions}
+          />
+        )}
       </div>
 
       {/* Navigation */}
@@ -686,10 +897,10 @@ export default function WizardPage() {
           </button>
         ) : (
           <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="btn-primary text-sm flex items-center gap-2"
-          >
+                       onClick={handleGenerate}
+                       disabled={generating || !step4Valid}
+                       className="btn-primary text-sm flex items-center gap-2"
+                     >
             {generating ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -698,7 +909,7 @@ export default function WizardPage() {
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                Generate document
+                {isUpdate ? "Save new version" : "Generate document"}
               </>
             )}
           </button>
@@ -708,9 +919,10 @@ export default function WizardPage() {
       {/* Progress hint */}
       <p className="text-center text-xs text-gray-400 mt-4">
         Step {step} of {STEPS.length}
-        {step < 4 && " · Required fields marked with "}
-        {step < 4 && <span className="text-red-400">*</span>}
+        {" · Required fields marked with "}
+        <span className="text-red-400">*</span>
       </p>
+      </>}
     </div>
   );
 }

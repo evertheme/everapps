@@ -892,9 +892,9 @@ class TestWizardService:
         current_state_type="enhance_existing",
         current_state_notes="Currently handled by phone; prone to errors.",
         desired_state_notes="Customers self-schedule online; staff get automatic reminders.",
-        must_have_features=[
-            "Book appointments via a public booking page",
-            "Send email reminders 24 hours before appointments",
+        features=[
+            {"description": "Book appointments via a public booking page", "priority": "must_have"},
+            {"description": "Send email reminders 24 hours before appointments", "priority": "must_have"},
         ],
     )
 
@@ -961,7 +961,7 @@ class TestWizardService:
             **self.WIZARD_PAYLOAD,
             "project_id": project.id,
             "user_id": test_user.id,
-            "must_have_features": [],
+            "features": [],
         }
         doc = save_wizard_document(**payload, db=db_session)
 
@@ -996,6 +996,35 @@ class TestWizardService:
         assert len(result["business_objectives"]) == 2
         assert mock_provider.complete.called
 
+    @pytest.mark.asyncio
+    async def test_generate_feature_suggestions_calls_llm(self):
+        from app.services.gap_analysis_service import generate_feature_suggestions
+
+        mock_response = json.dumps({
+            "features": [
+                {"description": "Book appointments online", "priority": "must_have"},
+                {"description": "Send email reminders", "priority": "nice_to_have"},
+                {"description": "Integrate with Slack", "priority": "future"},
+            ]
+        })
+        mock_provider = AsyncMock()
+        mock_provider.complete = AsyncMock(return_value=mock_response)
+
+        result = await generate_feature_suggestions(
+            product_name="Acme",
+            description="A scheduling tool.",
+            executive_summary="Helps small businesses.",
+            business_problem="Manual booking is error-prone.",
+            business_objectives=["To reduce no-shows by 30%."],
+            provider=mock_provider,
+        )
+
+        assert len(result) == 3
+        assert result[0]["description"] == "Book appointments online"
+        assert result[0]["priority"] == "must_have"
+        assert result[2]["priority"] == "future"
+        assert mock_provider.complete.called
+
 
 # ── Phase 3 wizard API endpoint tests ────────────────────────────────────────
 
@@ -1017,9 +1046,9 @@ class TestWizardEndpoints:
         "current_state_type": "enhance_existing",
         "current_state_notes": "Currently handled by phone.",
         "desired_state_notes": "Customers self-schedule online.",
-        "must_have_features": [
-            "Book appointments via a public booking page",
-            "Send email reminders 24 hours before appointments",
+        "features": [
+            {"description": "Book appointments via a public booking page", "priority": "must_have"},
+            {"description": "Send email reminders 24 hours before appointments", "priority": "nice_to_have"},
         ],
     }
 
@@ -1062,7 +1091,7 @@ class TestWizardEndpoints:
 
     def test_generate_without_features_omits_section(self, auth_client, test_project):
         project_id = test_project["id"]
-        payload = {**self.WIZARD_PAYLOAD, "must_have_features": []}
+        payload = {**self.WIZARD_PAYLOAD, "features": []}
         res = auth_client.post(
             f"/api/v1/req-assistant/{project_id}/wizard/generate",
             json=payload,
@@ -1072,6 +1101,27 @@ class TestWizardEndpoints:
             f"/api/v1/documents/{project_id}/{doc_id}"
         ).json()["latest_content"]
         assert "Functional Requirements" not in content
+
+    def test_generate_features_include_priority_labels(self, auth_client, test_project):
+        project_id = test_project["id"]
+        payload = {
+            **self.WIZARD_PAYLOAD,
+            "features": [
+                {"description": "Book appointments online", "priority": "must_have"},
+                {"description": "Support dark mode", "priority": "nice_to_have"},
+                {"description": "Integrate with Slack", "priority": "future"},
+            ],
+        }
+        res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=payload,
+        )
+        content = auth_client.get(
+            f"/api/v1/documents/{project_id}/{res.json()['document_id']}"
+        ).json()["latest_content"]
+        assert "Must Have" in content
+        assert "Nice to Have" in content
+        assert "Future Feature" in content
 
     def test_generate_requires_auth(self, client, test_project):
         res = client.post(
@@ -1087,6 +1137,46 @@ class TestWizardEndpoints:
                 "product_name": "Test",
                 "description": "Test product.",
                 "executive_summary": "A test.",
+            },
+        )
+        assert res.status_code == 403
+
+    def test_get_feature_suggestions_returns_features(self, auth_client, test_project):
+        project_id = test_project["id"]
+        mock_features = [
+            {"description": "Book appointments online", "priority": "must_have"},
+            {"description": "Send email reminders", "priority": "nice_to_have"},
+        ]
+        with patch(
+            "app.routers.requirement_assistant.generate_feature_suggestions",
+            new_callable=AsyncMock,
+            return_value=mock_features,
+        ):
+            res = auth_client.post(
+                f"/api/v1/req-assistant/{project_id}/wizard/feature-suggestions",
+                json={
+                    "product_name": "Acme",
+                    "description": "A scheduling tool.",
+                    "executive_summary": "Helps small businesses.",
+                    "business_problem": "Manual booking is error-prone.",
+                    "business_objectives": ["To reduce no-shows by 30%."],
+                },
+            )
+        assert res.status_code == 200
+        data = res.json()
+        assert "features" in data
+        assert len(data["features"]) == 2
+        assert data["features"][0]["priority"] == "must_have"
+
+    def test_get_feature_suggestions_requires_auth(self, client, test_project):
+        res = client.post(
+            f"/api/v1/req-assistant/{test_project['id']}/wizard/feature-suggestions",
+            json={
+                "product_name": "Test",
+                "description": "Test product.",
+                "executive_summary": "A test.",
+                "business_problem": "A problem.",
+                "business_objectives": ["To do something."],
             },
         )
         assert res.status_code == 403
@@ -1126,3 +1216,171 @@ class TestWizardEndpoints:
         assert data["current_state_notes"] == "Currently manual."
         assert data["desired_state_notes"] == "Will be automated."
         _ = mock_response  # suppress unused warning
+
+
+# ── Phase 3 wizard update / prefill tests ────────────────────────────────────
+
+class TestWizardUpdateAndPrefill:
+    """Tests for the wizard prefill and document-update endpoints."""
+
+    WIZARD_PAYLOAD = {
+        "product_name": "Acme Scheduler",
+        "description": "An online scheduling tool for small businesses.",
+        "executive_summary": (
+            "Small businesses waste hours per week on manual scheduling. "
+            "Acme Scheduler automates appointment booking."
+        ),
+        "business_problem": "Manual scheduling leads to double-bookings.",
+        "business_objectives": [
+            "To reduce no-show rate by 30% within 6 months.",
+            "To automate 80% of bookings within Q1.",
+        ],
+        "current_state_type": "enhance_existing",
+        "current_state_notes": "Currently handled by phone.",
+        "desired_state_notes": "Customers self-schedule online.",
+        "features": [
+            {"description": "Book appointments online", "priority": "must_have"},
+            {"description": "Send email reminders", "priority": "nice_to_have"},
+        ],
+    }
+
+    def test_update_creates_new_version(self, auth_client, test_project):
+        project_id = test_project["id"]
+        # First create a document
+        create_res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        assert create_res.status_code == 201
+        doc_id = create_res.json()["document_id"]
+
+        # Now update it via the wizard
+        updated_payload = {**self.WIZARD_PAYLOAD, "product_name": "Acme Scheduler v2"}
+        update_res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/update/{doc_id}",
+            json=updated_payload,
+        )
+        assert update_res.status_code == 201
+        data = update_res.json()
+        assert data["document_id"] == doc_id
+        assert data["version_number"] == 2
+
+    def test_update_increments_document_version(self, auth_client, test_project):
+        project_id = test_project["id"]
+        create_res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        doc_id = create_res.json()["document_id"]
+
+        auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/update/{doc_id}",
+            json=self.WIZARD_PAYLOAD,
+        )
+
+        docs = auth_client.get(f"/api/v1/documents/{project_id}/").json()
+        assert docs[0]["current_version"] == 2
+
+    def test_update_nonexistent_document_returns_404(self, auth_client, test_project):
+        project_id = test_project["id"]
+        fake_id = str(uuid.uuid4())
+        res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/update/{fake_id}",
+            json=self.WIZARD_PAYLOAD,
+        )
+        assert res.status_code == 404
+
+    def test_prefill_returns_wizard_fields(self, auth_client, test_project):
+        project_id = test_project["id"]
+        create_res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        doc_id = create_res.json()["document_id"]
+
+        prefill_res = auth_client.get(
+            f"/api/v1/req-assistant/{project_id}/wizard/prefill/{doc_id}"
+        )
+        assert prefill_res.status_code == 200
+        data = prefill_res.json()
+        assert data["product_name"] == "Acme Scheduler"
+        assert data["executive_summary"] != ""
+        assert isinstance(data["business_objectives"], list)
+        assert isinstance(data["features"], list)
+
+    def test_prefill_parses_features_with_priority(self, auth_client, test_project):
+        project_id = test_project["id"]
+        create_res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        doc_id = create_res.json()["document_id"]
+
+        data = auth_client.get(
+            f"/api/v1/req-assistant/{project_id}/wizard/prefill/{doc_id}"
+        ).json()
+        priorities = {f["priority"] for f in data["features"]}
+        assert "must_have" in priorities
+        assert "nice_to_have" in priorities
+
+    def test_prefill_nonexistent_document_returns_404(self, auth_client, test_project):
+        project_id = test_project["id"]
+        res = auth_client.get(
+            f"/api/v1/req-assistant/{project_id}/wizard/prefill/{uuid.uuid4()}"
+        )
+        assert res.status_code == 404
+
+    def test_parse_wizard_prefill_service(self):
+        """Unit test — parse_wizard_prefill correctly extracts all fields."""
+        from app.services.gap_analysis_service import parse_wizard_prefill
+
+        md = """\
+# Requirements Document: Test Product
+
+## 1. Document Header
+
+**Product Name:** Test Product  \\n**Version:** 0.1 (Draft)  \\n**Date:** 2026-01-01  \\n**Approval Status:** Draft  \\n**Description:** A short description.
+
+## 2. Executive Summary
+
+This is the executive summary.
+
+## 3. Project Context & Business Objectives
+
+### Business Problem Statement
+
+The core problem.
+
+### Business Objectives
+
+1. To increase revenue by 10%.
+2. To reduce cost by 5%.
+
+### Current State vs. Desired Future State
+
+**Current State:** Enhance Existing Product
+
+Currently things are manual.
+
+**Desired Future State:**
+Things will be automated.
+
+## 5. Functional Requirements
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-001 | The system shall book appointments | Must Have |
+| FR-002 | The system shall send reminders | Nice to Have |
+"""
+        result = parse_wizard_prefill(md)
+        assert result["product_name"] == "Test Product"
+        assert result["description"] == "A short description."
+        assert "executive summary" in result["executive_summary"].lower()
+        assert "core problem" in result["business_problem"]
+        assert len(result["business_objectives"]) == 2
+        assert result["current_state_type"] == "enhance_existing"
+        assert "manual" in result["current_state_notes"].lower()
+        assert "automated" in result["desired_state_notes"].lower()
+        assert len(result["features"]) == 2
+        assert result["features"][0]["priority"] == "must_have"
+        assert result["features"][1]["priority"] == "nice_to_have"

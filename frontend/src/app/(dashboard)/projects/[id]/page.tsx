@@ -399,11 +399,11 @@ export default function ProjectPage() {
           <div className="space-y-3">
             {documents.map((doc) => (
               <div key={doc.id}>
-                <div className="card p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-brand-500" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
+                <div className="card p-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="w-5 h-5 text-brand-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
                         {doc.filename}
                       </p>
                       <p className="text-xs text-gray-400">
@@ -411,20 +411,34 @@ export default function ProjectPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    className="btn-primary text-xs py-1.5 px-3"
-                    onClick={() => handleGenerateClick(doc.id)}
-                    disabled={generateMutation.isPending}
-                  >
-                    {generateMutation.isPending ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <>
-                        <Sparkles className="w-3 h-3 mr-1" />
-                        Generate stories
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1"
+                      onClick={() =>
+                        router.push(
+                          `/projects/${projectId}/requirements/wizard?documentId=${doc.id}`
+                        )
+                      }
+                      title="Edit with Wizard"
+                    >
+                      <Wand2 className="w-3 h-3" />
+                      Edit with Wizard
+                    </button>
+                    <button
+                      className="btn-primary text-xs py-1.5 px-3"
+                      onClick={() => handleGenerateClick(doc.id)}
+                      disabled={generateMutation.isPending}
+                    >
+                      {generateMutation.isPending ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3 mr-1" />
+                          Generate stories
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 {renderAdvisoryCard(doc)}
               </div>

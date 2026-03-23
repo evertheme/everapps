@@ -1,5 +1,5 @@
 """
-Gap Analysis Service — Phase 1 & 2
+Gap Analysis Service — Phase 1, 2 & 3
 
 Phase 1: Maps an uploaded document's parsed text to the 12 canonical requirement
 sections, scores each section for completeness, and persists the results as a
@@ -9,9 +9,10 @@ Phase 2: Adds interactive gap fill — draft AI content for missing/thin section
 approve customer-edited content, and serialise all approved sections into a new
 DocumentVersion.
 
-LLM strategy (Phase 1): single prompt with the full document text for documents
-up to ~60k chars. Larger documents fall back to a chunked multi-pass approach
-that aggregates section content before scoring.
+Phase 3: Wizard helpers — generate AI suggestions for context fields, assemble a
+Markdown requirements document from wizard answers (new document or new version of
+an existing document), and parse an existing document back into wizard fields for
+pre-population.
 """
 import json
 import logging
@@ -480,6 +481,64 @@ def approve_section(
 
 # ── Phase 3: wizard ───────────────────────────────────────────────────────────
 
+_FEATURE_SUGGESTIONS_SYSTEM_PROMPT = """You are an expert product manager. Based on the product context provided, suggest a set of product features.
+
+Return ONLY valid JSON — no markdown fences, no extra text:
+{
+  "features": [
+    {"description": "...", "priority": "must_have"},
+    {"description": "...", "priority": "nice_to_have"},
+    {"description": "...", "priority": "future"}
+  ]
+}
+
+Guidelines:
+- Suggest 6–10 features in total
+- description: a short capability statement (not starting with "The system shall"); 5–15 words
+- priority must be one of: must_have, nice_to_have, future
+- must_have: core features without which the product cannot launch (aim for 3–4)
+- nice_to_have: valuable improvements that are not launch-blockers (aim for 2–3)
+- future: good ideas for a later phase (aim for 1–2)
+- Make features specific to the product domain — avoid generic placeholder text"""
+
+
+async def generate_feature_suggestions(
+    product_name: str,
+    description: str,
+    executive_summary: str,
+    business_problem: str,
+    business_objectives: list[str],
+    provider: BaseLLMProvider,
+) -> list[dict]:
+    """
+    Call the LLM to suggest product features with priority classifications
+    based on the full wizard context from steps 1–3.
+
+    Returns a list of dicts matching WizardFeature: [{description, priority}, ...].
+    """
+    objectives_text = "\n".join(f"- {o}" for o in business_objectives if o.strip())
+    user_prompt = (
+        f"Product Name: {product_name}\n\n"
+        f"Description: {description}\n\n"
+        f"Executive Summary: {executive_summary}\n\n"
+        f"Business Problem: {business_problem}\n\n"
+        f"Business Objectives:\n{objectives_text}\n\n"
+        "Suggest features for this product."
+    )
+    raw = await provider.complete(_FEATURE_SUGGESTIONS_SYSTEM_PROMPT, user_prompt)
+    data = _parse_json_response(raw)
+
+    features = data.get("features", [])
+    return [
+        {
+            "description": str(f.get("description", "")).strip(),
+            "priority": str(f.get("priority", "must_have")),
+        }
+        for f in features
+        if str(f.get("description", "")).strip()
+    ]
+
+
 async def generate_wizard_suggestions(
     product_name: str,
     description: str,
@@ -521,7 +580,7 @@ def save_wizard_document(
     current_state_type: str,
     current_state_notes: str,
     desired_state_notes: str,
-    must_have_features: list[str],
+    features: list[dict],
     db: Session,
 ) -> RequirementDocument:
     """
@@ -584,17 +643,25 @@ def save_wizard_document(
     if desired_state_notes.strip():
         parts.append(f"**Desired Future State:**\n{desired_state_notes}\n")
 
-    # Section 5 — Functional Requirements (must-have features)
-    if must_have_features:
+    # Section 5 — Functional Requirements (features with priorities)
+    _PRIORITY_LABELS = {
+        "must_have":   "Must Have",
+        "nice_to_have": "Nice to Have",
+        "future":      "Future Feature",
+    }
+    non_empty_features = [f for f in features if str(f.get("description", "")).strip()]
+    if non_empty_features:
         parts.append("## 5. Functional Requirements\n")
-        parts.append("### Must-Have Features\n")
-        for i, feature in enumerate(must_have_features, 1):
+        parts.append("| ID | Requirement | Priority |")
+        parts.append("|---|---|---|")
+        for i, feat in enumerate(non_empty_features, 1):
             fr_id = f"FR-{i:03d}"
-            # Normalise: ensure it reads as a "shall" statement
-            feature_text = feature.strip()
+            feature_text = str(feat.get("description", "")).strip()
             if not feature_text.lower().startswith("the system shall"):
                 feature_text = f"The system shall {feature_text}"
-            parts.append(f"| {fr_id} | {feature_text} | Must-have |")
+            priority_key = str(feat.get("priority", "must_have"))
+            priority_label = _PRIORITY_LABELS.get(priority_key, "Must Have")
+            parts.append(f"| {fr_id} | {feature_text} | {priority_label} |")
         parts.append("")
 
     markdown_content = "\n".join(parts)
@@ -627,6 +694,219 @@ def save_wizard_document(
     db.refresh(doc)
     logger.info("Wizard document created: doc=%s project=%s", doc.id, project_id)
     return doc
+
+
+def parse_wizard_prefill(content: str) -> dict:
+    """
+    Best-effort extraction of wizard fields from a Markdown requirements document.
+
+    Works reliably for wizard-generated documents; returns partial data for
+    hand-authored documents.  All fields default to empty strings / empty lists
+    so the caller can safely display whatever was found.
+    """
+    _CURRENT_STATE_REVERSE = {
+        "new product (no current state)": "new_product",
+        "launch mvp":                     "launch_mvp",
+        "enhance existing product":       "enhance_existing",
+        "replace legacy system":          "replace_legacy",
+    }
+    _PRIORITY_REVERSE = {
+        "must have":      "must_have",
+        "nice to have":   "nice_to_have",
+        "future feature": "future",
+    }
+
+    result: dict = {
+        "product_name":        "",
+        "description":         "",
+        "executive_summary":   "",
+        "business_problem":    "",
+        "business_objectives": [],
+        "current_state_type":  "new_product",
+        "current_state_notes": "",
+        "desired_state_notes": "",
+        "features":            [],
+    }
+
+    # ── Product name from h1 title ──────────────────────────────────────────
+    m = re.search(r"^#\s+Requirements Document:\s*(.+)", content, re.MULTILINE)
+    if m:
+        result["product_name"] = m.group(1).strip()
+
+    # ── Extract each top-level ## section into a dict ───────────────────────
+    sections: dict[str, str] = {}
+    for match in re.finditer(
+        r"^## \d+\.\s+(.+?)\n(.*?)(?=^## |\Z)", content, re.MULTILINE | re.DOTALL
+    ):
+        sections[match.group(1).strip().lower()] = match.group(2).strip()
+
+    # ── Document header ──────────────────────────────────────────────────────
+    header_text = sections.get("document header", "")
+    m = re.search(r"\*\*Product Name:\*\*\s*(.+)", header_text)
+    if m and not result["product_name"]:
+        result["product_name"] = m.group(1).strip()
+    m = re.search(r"\*\*Description:\*\*\s*(.+)", header_text)
+    if m:
+        result["description"] = m.group(1).strip()
+
+    # ── Executive summary ────────────────────────────────────────────────────
+    result["executive_summary"] = sections.get("executive summary", "")
+
+    # ── Project context — split into ### sub-sections ────────────────────────
+    context_text = sections.get("project context & business objectives", "")
+    sub: dict[str, str] = {}
+    for sm in re.finditer(
+        r"^### (.+?)\n(.*?)(?=^### |\Z)", context_text, re.MULTILINE | re.DOTALL
+    ):
+        sub[sm.group(1).strip().lower()] = sm.group(2).strip()
+
+    result["business_problem"] = sub.get("business problem statement", "")
+
+    obj_text = sub.get("business objectives", "")
+    result["business_objectives"] = [
+        m.group(1).strip()
+        for m in re.finditer(r"^\d+\.\s+(.+)", obj_text, re.MULTILINE)
+    ]
+
+    cs_text = sub.get("current state vs. desired future state", "")
+    m = re.search(r"\*\*Current State:\*\*\s*(.+)", cs_text)
+    if m:
+        label = m.group(1).strip().lower()
+        result["current_state_type"] = _CURRENT_STATE_REVERSE.get(label, "other")
+
+    # Current state notes: text after the **Current State:** line, before **Desired
+    cs_body = re.sub(r"\*\*Current State:\*\*.+", "", cs_text).strip()
+    desired_split = re.split(r"\*\*Desired Future State:\*\*", cs_body, maxsplit=1)
+    if len(desired_split) == 2:
+        result["current_state_notes"] = desired_split[0].strip()
+        result["desired_state_notes"] = desired_split[1].strip()
+    else:
+        result["current_state_notes"] = cs_body.strip()
+
+    # ── Functional requirements table ────────────────────────────────────────
+    fr_text = sections.get("functional requirements", "")
+    features = []
+    for row in re.finditer(r"^\|\s*(FR-\d+)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|", fr_text, re.MULTILINE):
+        raw_desc  = row.group(2).strip()
+        raw_prior = row.group(3).strip().lower()
+        # Strip normalised "The system shall" prefix that we added during generation
+        desc = re.sub(r"^[Tt]he system shall\s+", "", raw_desc).strip()
+        priority = _PRIORITY_REVERSE.get(raw_prior, "must_have")
+        if desc:
+            features.append({"description": desc, "priority": priority})
+    result["features"] = features
+
+    return result
+
+
+def update_wizard_document(
+    document_id: uuid.UUID,
+    user_id: uuid.UUID,
+    product_name: str,
+    description: str,
+    executive_summary: str,
+    business_problem: str,
+    business_objectives: list[str],
+    current_state_type: str,
+    current_state_notes: str,
+    desired_state_notes: str,
+    features: list[dict],
+    db: Session,
+) -> tuple["RequirementDocument", "DocumentVersion"]:
+    """
+    Re-assemble a requirements document from updated wizard answers and save it
+    as a new DocumentVersion on an existing RequirementDocument.
+
+    Returns (document, new_version).
+    """
+    from datetime import date
+
+    doc = db.get(RequirementDocument, document_id)
+    if not doc:
+        raise ValueError(f"Document {document_id} not found")
+
+    # Re-use the same Markdown assembly logic as save_wizard_document
+    _CURRENT_STATE_LABELS = {
+        "new_product":     "New Product (no current state)",
+        "launch_mvp":      "Launch MVP",
+        "enhance_existing": "Enhance Existing Product",
+        "replace_legacy":  "Replace Legacy System",
+        "other":           "Other",
+    }
+    _PRIORITY_LABELS = {
+        "must_have":    "Must Have",
+        "nice_to_have": "Nice to Have",
+        "future":       "Future Feature",
+    }
+    current_state_label = _CURRENT_STATE_LABELS.get(current_state_type, current_state_type)
+    today = date.today().isoformat()
+
+    parts: list[str] = []
+    parts.append(f"# Requirements Document: {product_name}\n")
+
+    parts.append("## 1. Document Header\n")
+    parts.append(
+        f"**Product Name:** {product_name}  \n"
+        f"**Version:** {doc.current_version + 1}.0  \n"
+        f"**Date:** {today}  \n"
+        f"**Approval Status:** Draft  \n"
+        f"**Description:** {description}\n"
+    )
+
+    parts.append("## 2. Executive Summary\n")
+    parts.append(f"{executive_summary}\n")
+
+    parts.append("## 3. Project Context & Business Objectives\n")
+    parts.append("### Business Problem Statement\n")
+    parts.append(f"{business_problem}\n")
+
+    parts.append("### Business Objectives\n")
+    for i, obj in enumerate(business_objectives, 1):
+        parts.append(f"{i}. {obj}")
+    parts.append("")
+
+    parts.append("### Current State vs. Desired Future State\n")
+    parts.append(f"**Current State:** {current_state_label}\n")
+    if current_state_type != "new_product" and current_state_notes.strip():
+        parts.append(f"{current_state_notes}\n")
+    if desired_state_notes.strip():
+        parts.append(f"**Desired Future State:**\n{desired_state_notes}\n")
+
+    non_empty = [f for f in features if str(f.get("description", "")).strip()]
+    if non_empty:
+        parts.append("## 5. Functional Requirements\n")
+        parts.append("| ID | Requirement | Priority |")
+        parts.append("|---|---|---|")
+        for i, feat in enumerate(non_empty, 1):
+            fr_id = f"FR-{i:03d}"
+            feature_text = str(feat.get("description", "")).strip()
+            if not feature_text.lower().startswith("the system shall"):
+                feature_text = f"The system shall {feature_text}"
+            priority_label = _PRIORITY_LABELS.get(str(feat.get("priority", "must_have")), "Must Have")
+            parts.append(f"| {fr_id} | {feature_text} | {priority_label} |")
+        parts.append("")
+
+    markdown_content = "\n".join(parts)
+
+    new_version_number = doc.current_version + 1
+    doc.current_version = new_version_number
+
+    version = DocumentVersion(
+        document_id=doc.id,
+        created_by=user_id,
+        version_number=new_version_number,
+        content=markdown_content,
+        file_path=None,
+    )
+    db.add(version)
+    db.commit()
+    db.refresh(doc)
+    db.refresh(version)
+    logger.info(
+        "Wizard document updated: doc=%s version=%d project=%s",
+        doc.id, new_version_number, doc.project_id,
+    )
+    return doc, version
 
 
 def save_gap_fill_document(

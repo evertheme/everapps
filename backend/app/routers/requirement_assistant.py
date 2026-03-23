@@ -33,21 +33,28 @@ from app.schemas.requirement_assistant import (
     SectionSaveRequest,
     SectionStatusOut,
     SectionTemplateOut,
+    WizardFeatureSuggestionsOut,
+    WizardFeatureSuggestionsRequest,
     WizardGenerateOut,
     WizardGenerateRequest,
+    WizardPrefillOut,
     WizardSuggestionsOut,
     WizardSuggestionsRequest,
+    WizardUpdateOut,
 )
 from app.services.auth import CurrentUser
 from app.services.gap_analysis_service import (
     approve_section,
     draft_gap_fill,
     gap_status_from_score,
+    generate_feature_suggestions,
     generate_wizard_suggestions,
     get_latest_gap_analysis,
+    parse_wizard_prefill,
     run_gap_analysis,
     save_gap_fill_document,
     save_wizard_document,
+    update_wizard_document,
 )
 from app.services.llm.factory import get_provider_for_user
 from app.services.requirement_template_service import requirement_template_service
@@ -502,6 +509,42 @@ async def get_wizard_suggestions(
 
 
 @router.post(
+    "/{project_id}/wizard/feature-suggestions",
+    response_model=WizardFeatureSuggestionsOut,
+)
+async def get_wizard_feature_suggestions(
+    project_id: uuid.UUID,
+    payload: WizardFeatureSuggestionsRequest,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Generate AI feature suggestions for Step 4 of the wizard.
+
+    Calls the LLM with the full context from steps 1–3 (product name,
+    description, executive summary, business problem, and objectives) and
+    returns a prioritised list of suggested product features.
+    """
+    _assert_project_access(project_id, current_user.id, db)
+
+    llm_settings = (
+        db.query(LLMSettings).filter(LLMSettings.user_id == current_user.id).first()
+    )
+    provider = get_provider_for_user(llm_settings)
+
+    features = await generate_feature_suggestions(
+        product_name=payload.product_name,
+        description=payload.description,
+        executive_summary=payload.executive_summary,
+        business_problem=payload.business_problem,
+        business_objectives=payload.business_objectives,
+        provider=provider,
+    )
+
+    return WizardFeatureSuggestionsOut(features=features)
+
+
+@router.post(
     "/{project_id}/wizard/generate",
     response_model=WizardGenerateOut,
     status_code=status.HTTP_201_CREATED,
@@ -536,11 +579,92 @@ def generate_wizard_document(
         current_state_type=payload.current_state_type,
         current_state_notes=payload.current_state_notes,
         desired_state_notes=payload.desired_state_notes,
-        must_have_features=payload.must_have_features,
+        features=[f.model_dump() for f in payload.features],
         db=db,
     )
 
     return WizardGenerateOut(
         document_id=str(doc.id),
         message=f"Requirements document '{doc.filename}' created successfully.",
+    )
+
+
+@router.get(
+    "/{project_id}/wizard/prefill/{document_id}",
+    response_model=WizardPrefillOut,
+)
+def get_wizard_prefill(
+    project_id: uuid.UUID,
+    document_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Parse an existing document's latest content into wizard fields for
+    pre-population.  All fields default to empty when not found in the document.
+    """
+    _assert_project_access(project_id, current_user.id, db)
+
+    doc = db.get(RequirementDocument, document_id)
+    if not doc or doc.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    latest = (
+        db.query(DocumentVersion)
+        .filter(DocumentVersion.document_id == document_id)
+        .order_by(DocumentVersion.version_number.desc())
+        .first()
+    )
+    content = latest.content if latest and latest.content else ""
+    fields = parse_wizard_prefill(content)
+    return WizardPrefillOut(**fields)
+
+
+@router.post(
+    "/{project_id}/wizard/update/{document_id}",
+    response_model=WizardUpdateOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def update_wizard_document_endpoint(
+    project_id: uuid.UUID,
+    document_id: uuid.UUID,
+    payload: WizardGenerateRequest,
+    current_user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Re-assemble a requirements document from updated wizard answers and save it
+    as a new DocumentVersion on an existing RequirementDocument.
+
+    The document's version counter is incremented.  The new version appears in
+    the document list immediately and can be used for story generation.
+    """
+    _assert_project_access(project_id, current_user.id, db)
+
+    doc_check = db.get(RequirementDocument, document_id)
+    if not doc_check or doc_check.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        doc, version = update_wizard_document(
+            document_id=document_id,
+            user_id=current_user.id,
+            product_name=payload.product_name,
+            description=payload.description,
+            executive_summary=payload.executive_summary,
+            business_problem=payload.business_problem,
+            business_objectives=payload.business_objectives,
+            current_state_type=payload.current_state_type,
+            current_state_notes=payload.current_state_notes,
+            desired_state_notes=payload.desired_state_notes,
+            features=[f.model_dump() for f in payload.features],
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return WizardUpdateOut(
+        document_id=str(doc.id),
+        version_number=version.version_number,
+        message=f"Requirements document updated to version {version.version_number}.",
     )

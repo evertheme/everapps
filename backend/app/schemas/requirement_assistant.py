@@ -99,6 +99,25 @@ class WizardSuggestionsOut(BaseModel):
     desired_state_notes: str
 
 
+class WizardFeature(BaseModel):
+    """A single feature from the wizard with its priority classification."""
+    description: str
+    # must_have | nice_to_have | future
+    priority: str = "must_have"
+
+
+class WizardFeatureSuggestionsRequest(BaseModel):
+    product_name: str
+    description: str
+    executive_summary: str
+    business_problem: str
+    business_objectives: list[str]
+
+
+class WizardFeatureSuggestionsOut(BaseModel):
+    features: list[WizardFeature]
+
+
 class WizardGenerateRequest(BaseModel):
     product_name: str
     description: str
@@ -109,11 +128,31 @@ class WizardGenerateRequest(BaseModel):
     current_state_type: str
     current_state_notes: str = ""
     desired_state_notes: str = ""
-    must_have_features: list[str] = []
+    features: list[WizardFeature] = []
 
 
 class WizardGenerateOut(BaseModel):
     document_id: str
+    message: str
+
+
+class WizardPrefillOut(BaseModel):
+    """Wizard fields extracted from an existing document for pre-population."""
+    product_name: str
+    description: str
+    executive_summary: str
+    business_problem: str
+    business_objectives: list[str]
+    current_state_type: str
+    current_state_notes: str
+    desired_state_notes: str
+    features: list[WizardFeature]
+
+
+class WizardUpdateOut(BaseModel):
+    """Returned after saving a new version of an existing document via the wizard."""
+    document_id: str
+    version_number: int
     message: str
 
 

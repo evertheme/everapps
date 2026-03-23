@@ -177,6 +177,19 @@ export type CurrentStateType =
   | "replace_legacy"
   | "other";
 
+export type FeaturePriority = "must_have" | "nice_to_have" | "future";
+
+export const FEATURE_PRIORITY_OPTIONS: { value: FeaturePriority; label: string }[] = [
+  { value: "must_have",    label: "Must Have" },
+  { value: "nice_to_have", label: "Nice to Have" },
+  { value: "future",       label: "Future Feature" },
+];
+
+export interface WizardFeature {
+  description: string;
+  priority: FeaturePriority;
+}
+
 export const CURRENT_STATE_OPTIONS: { value: CurrentStateType; label: string }[] = [
   { value: "new_product",       label: "New Product (no current state)" },
   { value: "launch_mvp",        label: "Launch MVP" },
@@ -192,7 +205,29 @@ export interface WizardSuggestions {
   desired_state_notes: string;
 }
 
+export interface WizardFeatureSuggestions {
+  features: WizardFeature[];
+}
+
 export interface WizardGenerateResponse {
   document_id: string;
+  message: string;
+}
+
+export interface WizardPrefillData {
+  product_name: string;
+  description: string;
+  executive_summary: string;
+  business_problem: string;
+  business_objectives: string[];
+  current_state_type: CurrentStateType;
+  current_state_notes: string;
+  desired_state_notes: string;
+  features: WizardFeature[];
+}
+
+export interface WizardUpdateResponse {
+  document_id: string;
+  version_number: number;
   message: string;
 }
