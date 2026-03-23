@@ -80,6 +80,7 @@ function ScoreBar({ score }: { score: number }) {
 
 function SectionRow({
   section,
+
   isApproved,
   isClientApproved,
   isSelected,
