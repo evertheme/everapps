@@ -47,7 +47,7 @@ document). Each one is a hard blocker for a specific area of implementation:
 
 | Decision | What it blocks |
 |---|---|
-| **Deployment platform** | `deployment_service.py` and the CI/CD workflow templates committed into each project repo are entirely platform-specific and cannot be written until this is chosen |
+| **Deployment platform** | ~~`deployment_service.py` and the CI/CD workflow templates committed into each project repo are entirely platform-specific and cannot be written until this is chosen~~ **Decided: Railway** |
 | **AI coding approach** (Option A vs B) | `code_generator.py` is architected completely differently for each option; Option B also requires external agent setup before any coding tasks can run |
 | **GitHub org name** | The org must exist before any repos can be provisioned; it is stored in `ProjectRepository.github_org` |
 | **Base domain** | Must be registered and DNS-delegated before auto-subdomains can be provisioned or TLS certificates requested |
@@ -109,19 +109,17 @@ following must be completed first:
 
 ---
 
-### Step 5 — Set Up Deployment Platform Account
+### Step 5 — Set Up Railway Account
 
-Once the platform is chosen (Step 1), create an account and provision API access:
+Create a Railway account and provision API access:
 
-| Platform | Required credential |
-|---|---|
-| Railway | API token from Railway dashboard → Account Settings → Tokens |
-| Fly.io | `fly auth token` via Fly CLI |
-| Google Cloud Run | Service account JSON key with `Cloud Run Admin` + `Cloud SQL Client` roles |
-| Render | API key from Render dashboard → Account Settings → API Keys |
+1. Sign up or log in at [railway.app](https://railway.app)
+2. Go to **Account Settings → Tokens** and generate a new API token
+3. Store the token securely — it will be added to EVERAPPS's environment secrets as `RAILWAY_API_TOKEN`
+4. Optionally create a Railway **Team** to organize all generated project deployments under a shared billing account
 
 The API token is used by `deployment_service.py` to programmatically create and manage
-deployment environments for each generated project.
+Railway projects, services, and environments for each generated project.
 
 ---
 
@@ -155,12 +153,8 @@ GITHUB_APP_PRIVATE_KEY=                # contents of the downloaded .pem key fil
 GITHUB_APP_INSTALLATION_ID=            # installation ID for the org
 GITHUB_WEBHOOK_SECRET=                 # shared secret for X-Hub-Signature-256 validation
 
-# ── Deployment Platform ───────────────────────────────────────────────────────
-# Fill in only the platform that was chosen in Step 1. Remove the others.
-RAILWAY_API_TOKEN=
-FLY_API_TOKEN=
-RENDER_API_KEY=
-GCP_PROJECT_ID=                        # Cloud Run only
+# ── Deployment Platform (Railway) ─────────────────────────────────────────────
+RAILWAY_API_TOKEN=                     # Account Settings → Tokens in Railway dashboard
 
 # ── Domain ────────────────────────────────────────────────────────────────────
 BASE_DOMAIN=EVERAPPS.app              # base for auto-provisioned project subdomains
@@ -193,14 +187,14 @@ Suggested migration order to respect foreign key dependencies:
 
 ```
 Step 1 — Resolve open decisions
-        ├── Deployment platform
+        ├── Deployment platform  ✓ DECIDED: Railway
         ├── AI coding approach (Option A or B)
         ├── GitHub org name
         └── Base domain
 Step 2 — Register domain + configure wildcard DNS + obtain wildcard TLS cert
 Step 3 — Create GitHub org + provision GitHub App + generate webhook secret
 Step 4 — Deploy EVERAPPS itself (git repo → CI/CD → live public URL)
-Step 5 — Set up deployment platform account + obtain API token
+Step 5 — Set up Railway account + obtain API token
 Step 6 — Configure external coding agent  [Option B only]
 Step 7 — Add new environment variables to .env.example + production secrets
 Step 8 — Author and test Alembic migrations for four new models
@@ -262,29 +256,31 @@ class ProjectRepository(Base):
 ### 1.2 Deployment Infrastructure Setup
 
 When a project repository is provisioned, a corresponding deployment environment is created on
-the chosen hosting platform. The deployment platform is **not yet decided** — the following
-options are evaluated below. The existing
+**Railway** — the chosen hosting platform. The existing
 [`docs/deployment-cost-analysis.md`](deployment-cost-analysis.md) covers the full cost breakdown
-for each platform.
+across evaluated platforms.
 
-#### Platform Options for Project Deployments
+#### Railway Deployment Model
 
 Each generated project application requires: a backend service, a frontend service, a managed
-PostgreSQL database, and file storage. The CI/CD pipeline commits Docker images and triggers
-deployments.
+PostgreSQL database, and file storage. Railway's Docker-native model maps directly to this
+structure.
 
-| Platform | Starter cost | Scale-to-zero | Setup complexity | Best for |
-|---|---|---|---|---|
-| **Railway** | ~$29/mo | No | Lowest | Fastest path; Docker Compose compatible |
-| **Fly.io** | ~$23/mo | No | Low | Cheapest always-on; global edge |
-| **Google Cloud Run** | ~$22–37/mo | **Yes** | Medium | Uneven/low traffic; generous free tier |
-| **Render** | ~$51/mo | No | Low | Predictable fixed billing |
-| **AWS ECS Fargate** | ~$70/mo | No | High | Enterprise compliance |
-| **Azure Container Apps** | ~$71/mo | Partial | Medium | Azure OpenAI / Azure DevOps users |
+| Resource | Railway primitive | Notes |
+|---|---|---|
+| Backend service | Railway Service (Docker) | Deployed from the project's Docker image |
+| Frontend service | Railway Service (Docker) | Separate service in the same Railway project |
+| PostgreSQL database | Railway Postgres plugin | Managed; connection string injected automatically |
+| File storage | External (S3-compatible) | Railway has no native object storage; use Cloudflare R2 or AWS S3 |
 
-**Recommended starting point:** Railway or Google Cloud Run. Railway offers the fastest
-time-to-live-project with its Docker-native model. Cloud Run is preferred when projects are
-expected to have sparse traffic and cost efficiency matters most.
+**Why Railway:**
+- Docker Compose–compatible; CI/CD workflow maps directly to Railway's deploy API
+- Lowest setup complexity of evaluated platforms; no cloud provider account required
+- Per-project Railway projects provide clean isolation and independent billing visibility
+- `RAILWAY_API_TOKEN` is all that's needed to programmatically provision new project environments
+
+Each generated project is provisioned as a separate **Railway project** containing two
+environments: `staging` and `production`.
 
 **New data model — `ProjectDeployment`** (`backend/app/models/repository.py`):
 
@@ -296,7 +292,7 @@ class ProjectDeployment(Base):
     project_id: UUID          # FK → projects.id
     repository_id: UUID       # FK → project_repositories.id
     environment: str          # "staging" | "production"
-    platform: str             # "railway" | "fly" | "cloudrun" | "render" | "ecs" | "aca"
+    platform: str             # "railway" (decided); field retained for future portability
     deploy_url: str | None    # https://my-project.up.railway.app
     last_deploy_sha: str | None
     # status: pending | deploying | live | failed | paused
@@ -652,7 +648,7 @@ activity without polling.
 | `backend/app/services/github_service.py` | GitHub API: repo creation, branches, commits, PRs, webhooks |
 | `backend/app/services/code_generator.py` | AI code generation orchestration (Option A or B) |
 | `backend/app/services/story_prioritizer.py` | Hybrid PM-tool + AI dependency priority ordering |
-| `backend/app/services/deployment_service.py` | Platform deployment triggers (Railway / Fly / Cloud Run / Render) |
+| `backend/app/services/deployment_service.py` | Railway deployment triggers via Railway API |
 | `backend/app/services/domain_service.py` | Subdomain slug generation, DNS verification, TLS provisioning |
 
 ### Backend Routers
@@ -678,7 +674,7 @@ activity without polling.
 
 | Decision | Options | Status |
 |---|---|---|
-| Deployment platform for generated projects | Railway, Fly.io, Google Cloud Run, Render (see §1.2) | Not decided |
+| Deployment platform for generated projects | ~~Railway, Fly.io, Google Cloud Run, Render~~ | **Decided: Railway** |
 | AI coding integration approach | Option A (extend LLM service) vs Option B (external agent webhook) | Not decided |
 | GitHub org name for project repos | e.g., `EVERAPPS-projects` | Not decided |
 | Subdomain base domain | e.g., `EVERAPPS.app` — requires domain registration | Not decided |
