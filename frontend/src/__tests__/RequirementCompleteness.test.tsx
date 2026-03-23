@@ -10,18 +10,18 @@ jest.mock("next/navigation", () => ({
 }));
 
 const ALL_SECTIONS: GapAnalysisReport["sections"] = [
-  { section_type: "document_header",           display_name: "Document Header",                    required_level: "required",    gap_status: "present", completeness_score: 90, ai_feedback: null, content: "…" },
-  { section_type: "executive_summary",         display_name: "Executive Summary",                  required_level: "required",    gap_status: "present", completeness_score: 80, ai_feedback: null, content: "…" },
-  { section_type: "project_context",           display_name: "Project Context & Business Objectives", required_level: "required", gap_status: "present", completeness_score: 75, ai_feedback: null, content: "…" },
-  { section_type: "scope",                     display_name: "Scope",                              required_level: "required",    gap_status: "present", completeness_score: 85, ai_feedback: null, content: "…" },
-  { section_type: "stakeholders",              display_name: "Stakeholders & User Personas",       required_level: "required",    gap_status: "present", completeness_score: 70, ai_feedback: null, content: "…" },
-  { section_type: "functional_requirements",   display_name: "Functional Requirements",            required_level: "required",    gap_status: "present", completeness_score: 80, ai_feedback: null, content: "…" },
-  { section_type: "non_functional_requirements", display_name: "Non-Functional Requirements",    required_level: "required",    gap_status: "present", completeness_score: 72, ai_feedback: null, content: "…" },
-  { section_type: "data_requirements",         display_name: "Data & Integration Requirements",   required_level: "recommended", gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "" },
-  { section_type: "constraints",               display_name: "Constraints & Assumptions",         required_level: "recommended", gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "" },
-  { section_type: "success_metrics",           display_name: "Success Metrics & Acceptance Criteria", required_level: "recommended", gap_status: "missing", completeness_score: 0, ai_feedback: null, content: "" },
-  { section_type: "timeline",                  display_name: "Timeline & Prioritisation",         required_level: "optional",    gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "" },
-  { section_type: "glossary",                  display_name: "Glossary",                          required_level: "recommended", gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "" },
+  { section_type: "document_header",           display_name: "Document Header",                       required_level: "required",    gap_status: "present", completeness_score: 90, ai_feedback: null, content: "…", status: "complete" },
+  { section_type: "executive_summary",         display_name: "Executive Summary",                     required_level: "required",    gap_status: "present", completeness_score: 80, ai_feedback: null, content: "…", status: "complete" },
+  { section_type: "project_context",           display_name: "Project Context & Business Objectives", required_level: "required",    gap_status: "present", completeness_score: 75, ai_feedback: null, content: "…", status: "complete" },
+  { section_type: "scope",                     display_name: "Scope",                                 required_level: "required",    gap_status: "present", completeness_score: 85, ai_feedback: null, content: "…", status: "complete" },
+  { section_type: "stakeholders",              display_name: "Stakeholders & User Personas",          required_level: "required",    gap_status: "present", completeness_score: 70, ai_feedback: null, content: "…", status: "complete" },
+  { section_type: "functional_requirements",   display_name: "Functional Requirements",               required_level: "required",    gap_status: "present", completeness_score: 80, ai_feedback: null, content: "…", status: "complete" },
+  { section_type: "non_functional_requirements", display_name: "Non-Functional Requirements",         required_level: "required",    gap_status: "present", completeness_score: 72, ai_feedback: null, content: "…", status: "complete" },
+  { section_type: "data_requirements",         display_name: "Data & Integration Requirements",       required_level: "recommended", gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "",  status: "pending" },
+  { section_type: "constraints",               display_name: "Constraints & Assumptions",             required_level: "recommended", gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "",  status: "pending" },
+  { section_type: "success_metrics",           display_name: "Success Metrics & Acceptance Criteria", required_level: "recommended", gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "",  status: "pending" },
+  { section_type: "timeline",                  display_name: "Timeline & Prioritisation",             required_level: "optional",    gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "",  status: "pending" },
+  { section_type: "glossary",                  display_name: "Glossary",                              required_level: "recommended", gap_status: "missing", completeness_score: 0,  ai_feedback: null, content: "",  status: "pending" },
 ];
 
 function makeReport(overrides: Partial<GapAnalysisReport> = {}): GapAnalysisReport {
@@ -32,6 +32,7 @@ function makeReport(overrides: Partial<GapAnalysisReport> = {}): GapAnalysisRepo
     status: "complete",
     created_at: "2026-01-01T00:00:00Z",
     sections: ALL_SECTIONS,
+    can_save: true,
     ...overrides,
   };
 }

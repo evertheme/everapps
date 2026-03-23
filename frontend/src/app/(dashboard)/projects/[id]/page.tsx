@@ -15,6 +15,8 @@ import {
   Clock,
   X,
   FileSearch,
+  Download,
+  Wand2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
@@ -284,30 +286,33 @@ export default function ProjectPage() {
           Requirement Documents
         </h2>
 
-        <div
-          {...getRootProps()}
-          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors mb-4 ${
-            isDragActive
-              ? "border-brand-400 bg-brand-50"
-              : "border-gray-200 hover:border-brand-300"
-          }`}
-        >
-          <input {...getInputProps()} />
-          {uploading ? (
-            <div className="flex flex-col items-center gap-2 text-brand-600">
-              <Loader2 className="w-8 h-8 animate-spin" />
-              <p className="text-sm font-medium">Parsing document…</p>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2 text-gray-400">
-              <Upload className="w-8 h-8" />
-              <p className="text-sm font-medium text-gray-600">
-                {isDragActive ? "Drop to upload" : "Drop a file or click to browse"}
-              </p>
-              <p className="text-xs">.docx, .pdf, .txt, .md</p>
-            </div>
-          )}
-        </div>
+        {/* Show dropzone above the list only when documents already exist */}
+        {!isLoading && documents.length > 0 && (
+          <div
+            {...getRootProps()}
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors mb-4 ${
+              isDragActive
+                ? "border-brand-400 bg-brand-50"
+                : "border-gray-200 hover:border-brand-300"
+            }`}
+          >
+            <input {...getInputProps()} />
+            {uploading ? (
+              <div className="flex flex-col items-center gap-2 text-brand-600">
+                <Loader2 className="w-6 h-6 animate-spin" />
+                <p className="text-sm font-medium">Parsing document…</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 text-gray-400">
+                <Upload className="w-6 h-6" />
+                <p className="text-sm font-medium text-gray-600">
+                  {isDragActive ? "Drop to upload" : "Drop a new version or click to browse"}
+                </p>
+                <p className="text-xs">.docx, .pdf, .txt, .md</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {isLoading ? (
           <div className="space-y-2">
@@ -316,18 +321,89 @@ export default function ProjectPage() {
             ))}
           </div>
         ) : documents.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-8">
-            No documents uploaded yet
-          </p>
+          /* ── No-document onboarding ─────────────────────────────────────── */
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500 text-center py-2">
+              Get started by uploading a document, downloading our template, or
+              building one step-by-step with the wizard.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Option 1 — Upload */}
+              <div
+                {...getRootProps()}
+                className={`card p-5 flex flex-col items-center gap-3 text-center cursor-pointer transition-colors ${
+                  isDragActive
+                    ? "border-brand-400 bg-brand-50"
+                    : "hover:border-brand-300 hover:bg-gray-50"
+                }`}
+              >
+                <input {...getInputProps()} />
+                <div className="w-10 h-10 rounded-lg bg-brand-100 flex items-center justify-center">
+                  {uploading ? (
+                    <Loader2 className="w-5 h-5 text-brand-600 animate-spin" />
+                  ) : (
+                    <Upload className="w-5 h-5 text-brand-600" />
+                  )}
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm">
+                    {uploading ? "Uploading…" : "Upload a document"}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Drop a .docx, .pdf, .txt or .md file
+                  </p>
+                </div>
+              </div>
+
+              {/* Option 2 — Download template */}
+              <a
+                href="/templates/requirements-template.docx"
+                download="requirements-template.docx"
+                className="card p-5 flex flex-col items-center gap-3 text-center hover:border-brand-300 hover:bg-gray-50 transition-colors no-underline"
+              >
+                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                  <Download className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm">
+                    Download template
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Pre-structured .docx for all 12 sections
+                  </p>
+                </div>
+              </a>
+
+              {/* Option 3 — Wizard */}
+              <button
+                onClick={() =>
+                  router.push(`/projects/${projectId}/requirements/wizard`)
+                }
+                className="card p-5 flex flex-col items-center gap-3 text-center hover:border-brand-300 hover:bg-gray-50 transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                  <Wand2 className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm">
+                    Create with wizard
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Answer a few questions and let AI build your document
+                  </p>
+                </div>
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="space-y-3">
             {documents.map((doc) => (
               <div key={doc.id}>
-                <div className="card p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-brand-500" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
+                <div className="card p-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="w-5 h-5 text-brand-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
                         {doc.filename}
                       </p>
                       <p className="text-xs text-gray-400">
@@ -335,20 +411,34 @@ export default function ProjectPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    className="btn-primary text-xs py-1.5 px-3"
-                    onClick={() => handleGenerateClick(doc.id)}
-                    disabled={generateMutation.isPending}
-                  >
-                    {generateMutation.isPending ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <>
-                        <Sparkles className="w-3 h-3 mr-1" />
-                        Generate stories
-                      </>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1"
+                      onClick={() =>
+                        router.push(
+                          `/projects/${projectId}/requirements/wizard?documentId=${doc.id}`
+                        )
+                      }
+                      title="Edit with Wizard"
+                    >
+                      <Wand2 className="w-3 h-3" />
+                      Edit with Wizard
+                    </button>
+                    <button
+                      className="btn-primary text-xs py-1.5 px-3"
+                      onClick={() => handleGenerateClick(doc.id)}
+                      disabled={generateMutation.isPending}
+                    >
+                      {generateMutation.isPending ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3 mr-1" />
+                          Generate stories
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 {renderAdvisoryCard(doc)}
               </div>

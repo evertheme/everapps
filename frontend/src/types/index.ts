@@ -121,6 +121,7 @@ export interface ExportResult {
 
 export type GapStatus = "missing" | "thin" | "present";
 export type RequiredLevel = "required" | "recommended" | "optional";
+export type SectionApprovalStatus = "pending" | "in_progress" | "complete" | "skipped";
 
 export interface SectionTemplate {
   section_type: string;
@@ -140,6 +141,8 @@ export interface SectionStatus {
   completeness_score: number;
   ai_feedback: string | null;
   content: string;
+  /** Server-side approval status: pending | in_progress | complete | skipped */
+  status: SectionApprovalStatus;
 }
 
 export interface GapAnalysisReport {
@@ -149,4 +152,82 @@ export interface GapAnalysisReport {
   status: string;
   sections: SectionStatus[];
   created_at: string;
+  /** True when document_header and executive_summary are both approved */
+  can_save: boolean;
+}
+
+export interface SectionFillResponse {
+  section_type: string;
+  content: string;
+  ai_feedback: string | null;
+}
+
+export interface SaveDocumentResponse {
+  document_id: string;
+  version_number: number;
+  message: string;
+}
+
+// ── Requirements Wizard ───────────────────────────────────────────────────────
+
+export type CurrentStateType =
+  | "new_product"
+  | "launch_mvp"
+  | "enhance_existing"
+  | "replace_legacy"
+  | "other";
+
+export type FeaturePriority = "must_have" | "nice_to_have" | "future";
+
+export const FEATURE_PRIORITY_OPTIONS: { value: FeaturePriority; label: string }[] = [
+  { value: "must_have",    label: "Must Have" },
+  { value: "nice_to_have", label: "Nice to Have" },
+  { value: "future",       label: "Future Feature" },
+];
+
+export interface WizardFeature {
+  description: string;
+  priority: FeaturePriority;
+}
+
+export const CURRENT_STATE_OPTIONS: { value: CurrentStateType; label: string }[] = [
+  { value: "new_product",       label: "New Product (no current state)" },
+  { value: "launch_mvp",        label: "Launch MVP" },
+  { value: "enhance_existing",  label: "Enhance Existing Product" },
+  { value: "replace_legacy",    label: "Replace Legacy System" },
+  { value: "other",             label: "Other" },
+];
+
+export interface WizardSuggestions {
+  business_problem: string;
+  business_objectives: string[];
+  current_state_notes: string;
+  desired_state_notes: string;
+}
+
+export interface WizardFeatureSuggestions {
+  features: WizardFeature[];
+}
+
+export interface WizardGenerateResponse {
+  document_id: string;
+  message: string;
+}
+
+export interface WizardPrefillData {
+  product_name: string;
+  description: string;
+  executive_summary: string;
+  business_problem: string;
+  business_objectives: string[];
+  current_state_type: CurrentStateType;
+  current_state_notes: string;
+  desired_state_notes: string;
+  features: WizardFeature[];
+}
+
+export interface WizardUpdateResponse {
+  document_id: string;
+  version_number: number;
+  message: string;
 }
