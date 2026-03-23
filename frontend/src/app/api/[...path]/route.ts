@@ -25,6 +25,7 @@ async function proxyRequest(request: NextRequest, path: string[]): Promise<NextR
       method: request.method,
       headers,
       body,
+      signal: AbortSignal.timeout(30_000),
     });
 
     const responseHeaders = new Headers();
