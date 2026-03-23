@@ -1,10 +1,11 @@
-name: CI
+name: Feature Branch Tests
 
 on:
   push:
-    branches: [develop, staging, main]
-  pull_request:
-    branches: [develop, staging, main]
+    branches-ignore:
+      - main
+      - staging
+      - develop
 
 jobs:
   backend-tests:

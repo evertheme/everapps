@@ -1,0 +1,45 @@
+# Ensure consistent line endings across platforms.
+# All text files get LF in the repo; Windows checkouts get CRLF
+# for files that need it, LF for everything Unix/Docker-targeted.
+
+* text=auto
+
+# Shell scripts must always use LF — CRLF breaks the shebang inside Linux containers
+*.sh    text eol=lf
+
+# Docker and config files are Linux-targeted
+Dockerfile*     text eol=lf
+*.conf          text eol=lf
+*.toml          text eol=lf
+*.ini           text eol=lf
+*.cfg           text eol=lf
+
+# Web / source files — let Git normalise
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.jsx   text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.py    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.sql   text eol=lf
+
+# Binary files — never touch line endings
+*.docx  binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary

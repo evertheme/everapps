@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
@@ -20,7 +21,7 @@ export default function MarketingHeader() {
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
           <Link href="/" className="shrink-0">
-            <img src="/images/brand/logo.png" alt="everapps" width={155} height={32} />
+            <Image src="/images/brand/logo.png" alt="everapps" width={155} height={32} />
           </Link>
 
           {/* Desktop nav */}
