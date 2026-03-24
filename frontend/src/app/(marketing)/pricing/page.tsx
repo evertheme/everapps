@@ -1,5 +1,7 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { CheckCircle, Minus, ArrowRight, Sparkles, Zap, Building2 } from 'lucide-react';
+import { isComingSoonMode } from '@/lib/coming-soon';
 
 /* ─── Tier definitions ──────────────────────────────────────────────────────── */
 
@@ -239,7 +241,11 @@ function ComparisonCell({ value }: { value: string | boolean }) {
 
 export const metadata = { title: 'Pricing — everapps' };
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  if (isComingSoonMode()) {
+    redirect('/');
+  }
+
   return (
     <>
       {/* ── Hero ─────────────────────────────────────────────────────────── */}

@@ -210,6 +210,8 @@ Create one Railway project with three environments — **development**, **stagin
 | Variable | Value |
 |---|---|
 | `BACKEND_URL` | `http://<backend-private-domain>:<port>` — find the private domain in the backend service → Settings → Private Networking |
+| `LAUNCHED` | `true` when the product is publicly live; omit or `false` on **production** only to show the pre-launch “coming soon” page (no CTAs or auth routes). Ignored outside Railway production (`RAILWAY_ENVIRONMENT`). |
+| `RAILWAY_ENVIRONMENT` | Set automatically by Railway — used with `LAUNCHED` to decide whether to show the coming soon page. |
 
 ### How startup works
 
