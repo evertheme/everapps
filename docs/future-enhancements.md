@@ -88,35 +88,26 @@ document). Each one is a hard blocker for a specific area of implementation:
 
 ---
 
-### Step 4 — Deploy EVERAPPS Itself
+### ~~Step 4 — Deploy EVERAPPS Itself~~ ✓ COMPLETE
 
-This is the most critical operational prerequisite. **GitHub webhooks require a publicly reachable
+~~This is the most critical operational prerequisite. **GitHub webhooks require a publicly reachable
 HTTPS URL** to deliver events to. The `POST /api/v1/pipeline/webhook` endpoint must be live on
-the internet before any project repository can register a webhook pointing to it.
+the internet before any project repository can register a webhook pointing to it.~~
 
-EVERAPPS currently has no git repository initialized and no CI/CD pipeline configured. The
-following must be completed first:
-
-1. Initialize a git repository in this project and push to a GitHub repo under your control
-2. Configure EVERAPPS's own CI/CD pipeline — the pipeline skeleton from
-   [`docs/deployment-cost-analysis.md`](deployment-cost-analysis.md) §7 applies directly:
-   lint & test → build Docker images → push to registry → run Alembic migrations → deploy
-3. Deploy EVERAPPS to one of the evaluated platforms with a real, stable public domain
-   (e.g., `app.EVERAPPS.com`)
-4. Confirm the health endpoint (`GET /health`) is reachable externally
-5. Record the public base URL — it will be stored in `EVERAPPS_PUBLIC_URL` and used when
-   registering webhooks on each project repo EVERAPPS creates
+EVERAPPS is now deployed with a GitHub repository, CI/CD pipeline (GitHub Actions), and Railway
+environments for `develop`, `staging`, and `main`. The deployment infrastructure and promotion
+workflows are documented in [`docs/cicd-pipeline-strategy.md`](cicd-pipeline-strategy.md) and
+[`docs/git-branching-strategy.md`](git-branching-strategy.md).
 
 ---
 
-### Step 5 — Set Up Railway Account
+### ~~Step 5 — Set Up Railway Account~~ ✓ COMPLETE
 
-Create a Railway account and provision API access:
+~~Create a Railway account and provision API access:~~
 
-1. Sign up or log in at [railway.app](https://railway.app)
-2. Go to **Account Settings → Tokens** and generate a new API token
-3. Store the token securely — it will be added to EVERAPPS's environment secrets as `RAILWAY_API_TOKEN`
-4. Optionally create a Railway **Team** to organize all generated project deployments under a shared billing account
+Railway is configured with three environments (`develop`, `staging`, `production`), each connected
+to the corresponding GitHub branch. Deployments are triggered automatically on every push to those
+branches. The Railway account and API token are already provisioned.
 
 The API token is used by `deployment_service.py` to programmatically create and manage
 Railway projects, services, and environments for each generated project.
@@ -193,8 +184,8 @@ Step 1 — Resolve open decisions
         └── Base domain
 Step 2 — Register domain + configure wildcard DNS + obtain wildcard TLS cert
 Step 3 — Create GitHub org + provision GitHub App + generate webhook secret
-Step 4 — Deploy EVERAPPS itself (git repo → CI/CD → live public URL)
-Step 5 — Set up Railway account + obtain API token
+Step 4 — Deploy EVERAPPS itself (git repo → CI/CD → live public URL)  ✓ COMPLETE
+Step 5 — Set up Railway account + obtain API token  ✓ COMPLETE
 Step 6 — Configure external coding agent  [Option B only]
 Step 7 — Add new environment variables to .env.example + production secrets
 Step 8 — Author and test Alembic migrations for four new models

@@ -18,9 +18,9 @@ Feature branches are ephemeral and always branch from `develop`.
 
 > **Changes only ever flow upward: `develop → staging → main`.**
 >
-> Nothing is ever committed directly to `staging` or `main` — those branches only receive changes via promotion merges from the branch below them.
+> Nothing is ever committed directly to `staging` or `main` — those branches only receive changes via promotion through GitHub Actions.
 
-Violating this rule is the primary cause of merge conflicts.
+Violating this rule is the primary cause of merge conflicts and branch divergence.
 
 ---
 
@@ -42,50 +42,45 @@ git commit -m "feat: describe the change"
 git push origin feature/my-feature
 ```
 
-Open a PR targeting `develop`. Once reviewed and approved, **squash merge** the feature branch into `develop`. Squashing keeps `develop`'s history linear, which is what makes conflict-free promotion possible.
+Open a PR targeting `develop`. Once reviewed and approved, **squash merge** the feature branch into `develop`. The repo is configured to only allow squash and rebase merges — merge commits are disabled to keep history linear.
 
 ### 2. Promoting develop → staging
 
-After testing in the Railway develop environment:
+After testing in the Railway develop environment, trigger the promotion workflow:
 
-```bash
-git checkout staging
-git pull origin staging
-git merge --ff-only develop
-git push origin staging
-```
+1. Go to **GitHub → Actions → Promote develop → staging**
+2. Click **Run workflow** → select branch `develop` → **Run workflow**
+
+The workflow runs a pre-flight check comparing the file trees of both branches. If staging already has develop's content it exits cleanly. Otherwise it creates a PR from `develop` into `staging` and rebase-merges it automatically.
 
 ### 3. Promoting staging → main
 
 After testing in the Railway staging environment:
 
-```bash
-git checkout main
-git pull origin main
-git merge --ff-only staging
-git push origin main
-```
+1. Go to **GitHub → Actions → Promote staging → main**
+2. Click **Run workflow** → select branch `develop`
+3. Choose the **version bump type**: `patch`, `minor`, or `major`
+4. Click **Run workflow**
+
+The workflow promotes staging to main, then automatically creates an annotated git tag and a GitHub Release with categorized release notes.
 
 ---
 
-## Why `--ff-only`?
+## Why Rebase Merges for Promotions?
 
-`--ff-only` (fast-forward only) means Git will refuse to create a merge commit. The merge only succeeds if the target branch has no commits that the source branch doesn't already contain.
+Promotions use **rebase merge** (via `gh pr merge --rebase`) rather than squash or regular merge. This is the correct strategy for a promotion chain because:
 
-```
-Before:  develop: A - B - C
-         staging: A - B       ← staging is behind, ff-only succeeds
+- Rebase replays each individual commit from the source branch onto the target, creating new SHAs but preserving a linear ancestry chain
+- Each target branch remains a direct ancestor of the next — `develop` commits are in `staging`'s history, `staging` commits are in `main`'s history
+- This means the next promotion always has a clean, unambiguous merge base with no conflicts
 
-After:   staging: A - B - C   ← staging pointer just moves forward
-```
-
-If `--ff-only` fails, it means `staging` (or `main`) has diverged — it contains commits that `develop` does not. **This is a signal to stop and investigate**, not to force a merge. See the [Recovering from Diverged Branches](#recovering-from-diverged-branches) section.
+Squash merges break this chain permanently (each squash creates a new SHA with no ancestry link), causing merge conflicts on every subsequent promotion.
 
 ---
 
 ## Hotfix Protocol
 
-When a critical bug requires an immediate fix to production without waiting for the full `develop → staging → main` pipeline:
+When a critical bug requires an immediate fix to production without waiting for the full pipeline:
 
 ```bash
 # 1. Branch from main (not develop)
@@ -97,36 +92,27 @@ git checkout -b hotfix/describe-the-fix
 git add .
 git commit -m "fix: describe the fix"
 git push origin hotfix/describe-the-fix
-# → Squash merge PR into main
+# → Squash merge PR into main via GitHub
 ```
 
-**Immediately after merging to `main`, back-propagate downward:**
+**Immediately after merging to `main`, back-propagate downward using the promotion workflows in reverse:**
 
-```bash
-# 3. Propagate main → staging
-git checkout staging
-git pull origin staging
-git merge --ff-only main
-git push origin staging
-
-# 4. Propagate staging → develop
-git checkout develop
-git pull origin develop
-git merge --ff-only staging
-git push origin develop
-```
+1. Run **Promote develop → staging** — this will detect that staging is now behind main and handle the sync
+2. If needed, manually open a PR from `main` into `staging`, then from `staging` into `develop` to back-propagate the hotfix
 
 Back-propagation must happen right away. Deferring it is how branches drift apart.
+
+After back-propagating, use the **Create Release** workflow to tag the hotfix:
+
+1. Go to **GitHub → Actions → Create Release**
+2. Select bump type `patch`, branch `main`
+3. Click **Run workflow**
 
 ---
 
 ## Version Tagging
 
-Tags mark production releases and provide a permanent, human-readable reference to exactly what is running in each environment. Tags always live on `main`.
-
-### When to tag
-
-Tag `main` immediately after every promotion from `staging → main`. Every production deploy should correspond to a tag.
+Tags mark production releases and provide a permanent reference to exactly what is running in production. Tags always live on `main` and are created automatically by the **Promote staging → main** workflow.
 
 ### Versioning scheme
 
@@ -135,68 +121,41 @@ Use [Semantic Versioning](https://semver.org/): `vMAJOR.MINOR.PATCH`
 | Segment | Increment when... |
 |---------|-------------------|
 | `MAJOR` | Breaking changes or major product milestones |
-| `MINOR` | New features that are backward-compatible |
+| `MINOR` | New backward-compatible features |
 | `PATCH` | Bug fixes and hotfixes |
 
-### Tagging a production release
-
-```bash
-# After promoting staging → main
-git checkout main
-git pull origin main
-
-# Create an annotated tag (preferred over lightweight tags)
-git tag -a v1.2.0 -m "Release v1.2.0: brief description of what's in this release"
-git push origin v1.2.0
-```
-
-Use **annotated tags** (`-a`) rather than lightweight tags — they store the tagger, date, and message, which makes them useful as release markers in GitHub and CI/CD pipelines.
-
-### Tagging a hotfix release
-
-Hotfixes increment the `PATCH` version:
-
-```bash
-# After the hotfix is merged to main and back-propagated
-git checkout main
-git tag -a v1.2.1 -m "Hotfix v1.2.1: describe what was fixed"
-git push origin v1.2.1
-```
+The workflow reads the latest tag and auto-increments based on your bump selection. No manual version entry required. If no tags exist, versioning starts from `v0.0.0`.
 
 ### Viewing tags
 
 ```bash
 git tag -l              # list all tags
 git show v1.2.0         # inspect a specific tag
-git log --oneline main  # see which commit a tag points to
-```
-
-### GitHub Releases
-
-After pushing a tag, create a GitHub Release from it. This generates a changelog entry and notifies any stakeholders watching the repo. You can do this manually in the GitHub UI or via the CLI:
-
-```bash
-gh release create v1.2.0 --title "v1.2.0" --generate-notes
 ```
 
 ---
 
-## Recovering from Diverged Branches
+## Recovering from Branch Divergence
 
-If `git merge --ff-only` fails, run:
+The promotion workflows include a pre-flight check that compares file trees between branches. If a promotion detects that the target branch has content the source doesn't, it fails with a diagnostic message.
+
+**Common causes:**
+- A hotfix was merged to `main` but never back-propagated to `staging` and `develop`
+- A PR was merged directly to `staging` or `main` bypassing the workflow
+
+**To investigate:**
 
 ```bash
-git log --oneline develop..staging   # commits in staging not in develop
-git log --oneline staging..develop   # commits in develop not in staging
+git fetch origin
+
+# What main has that staging doesn't
+git log --oneline origin/staging..origin/main
+
+# What staging has that develop doesn't  
+git log --oneline origin/develop..origin/staging
 ```
 
-**Common causes and fixes:**
-
-| Cause | Fix |
-|-------|-----|
-| A hotfix was merged to `main` but never back-propagated | Back-propagate now: `main → staging → develop` using `--ff-only` |
-| Someone pushed directly to `staging` or `main` | Cherry-pick those commits onto `develop`, then re-promote |
-| Railway or CI auto-committed to a branch | Revert the commit on the upper branch, re-apply via `develop` |
+In most cases: back-propagate the missing commits downward (hotfix PRs from main → staging → develop), then re-run the promotion workflow.
 
 ---
 
@@ -205,64 +164,67 @@ git log --oneline staging..develop   # commits in develop not in staging
 ```mermaid
 flowchart TD
     feature[feature/branch] -->|"squash merge PR"| develop
-    develop -->|"ff-only (after Railway develop test)"| staging
-    staging -->|"ff-only (after Railway staging test)"| main
-    main -->|"git tag -a vX.Y.Z"| tag["vX.Y.Z (GitHub Release)"]
+    develop -->|"GitHub Actions: rebase PR"| staging
+    staging -->|"GitHub Actions: rebase PR + auto-tag"| main
+    main -->|"GitHub Release created"| tag["vX.Y.Z"]
 
     hotfix[hotfix/branch] -->|"squash merge PR"| main
     main -->|"back-propagate immediately"| staging
     staging -->|"back-propagate immediately"| develop
+    main -->|"Create Release workflow"| hotfixTag["vX.Y.Z (patch)"]
 ```
 
 ---
 
-## Branch Protection Settings (GitHub)
+## Repository Settings (GitHub)
 
-Enforce this strategy at the repository level:
+The following settings are configured and should not be changed:
 
-- **Require pull requests** before merging for `develop`, `staging`, and `main`
-- **Disable direct pushes** to all three branches
-- **Require linear history** (optional but recommended — enforces squash/rebase merges)
-- **Do not allow bypassing the above settings** for admins
+**Merge strategy (repo-wide):**
+- Merge commits: **disabled**
+- Squash merges: **enabled** (for feature branches into develop)
+- Rebase merges: **enabled** (used by promotion workflows)
+
+**Rulesets:**
+- `protect-develop`: requires pull request before merging
+- `protect-main-staging`: requires pull request + linear history (no merge commits)
+
+**Default branch:** `develop`
 
 ---
 
 ## Quick Reference
 
-### Normal feature promotion
+### Normal feature cycle
 
 ```bash
-# 1. Promote develop → staging
-git checkout staging && git pull origin staging
-git merge --ff-only develop && git push origin staging
+# 1. Create feature branch
+git checkout develop && git pull origin develop
+git checkout -b feature/my-feature
 
-# 2. Promote staging → main
-git checkout main && git pull origin main
-git merge --ff-only staging && git push origin main
+# 2. Work, commit, push, open PR into develop
+git push origin feature/my-feature
+# → Squash merge via GitHub PR
 
-# 3. Tag the release
-git tag -a v1.2.0 -m "Release v1.2.0: brief description"
-git push origin v1.2.0
-gh release create v1.2.0 --title "v1.2.0" --generate-notes
+# 3. Promote via GitHub Actions
+# Actions → Promote develop → staging → Run workflow
+# Actions → Promote staging → main → Run workflow (select bump type)
 ```
 
-### Hotfix (urgent production fix)
+### Hotfix
 
 ```bash
 # Branch from main, fix, squash merge PR into main, then:
-git checkout staging && git merge --ff-only main && git push origin staging
-git checkout develop && git merge --ff-only staging && git push origin develop
-
-# Tag the patch release
-git checkout main
-git tag -a v1.2.1 -m "Hotfix v1.2.1: brief description"
-git push origin v1.2.1
-gh release create v1.2.1 --title "v1.2.1" --generate-notes
+# Actions → Create Release → bump: patch, branch: main → Run workflow
+# Manually open back-propagation PRs: main → staging → develop
 ```
 
-### Check for divergence
+### Check branch state
 
 ```bash
-git log --oneline develop..staging   # what staging has that develop doesn't
-git log --oneline staging..main      # what main has that staging doesn't
+git fetch origin
+git log --oneline origin/develop -5   # latest on develop
+git log --oneline origin/staging -5   # latest on staging
+git log --oneline origin/main -5      # latest on main
+git tag -l | sort -V | tail -5        # recent release tags
 ```
