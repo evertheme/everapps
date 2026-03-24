@@ -5,19 +5,16 @@ on:
 
 jobs:
   promote:
-    name: Fast-forward staging to develop
+    name: Promote develop to staging via PR
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
-
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch latest branch state
         run: git fetch origin
@@ -46,11 +43,50 @@ jobs:
 
           echo "Pre-flight check passed. staging can be fast-forwarded to develop."
 
-      - name: Promote staging to develop
-        run: git push origin origin/develop:refs/heads/staging
+      - name: Check for existing promotion PR
+        id: existing-pr
+        run: |
+          PR_NUMBER=$(gh pr list \
+            --base staging \
+            --head develop \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Found existing open PR #$PR_NUMBER. Will merge it."
+          else
+            echo "No existing PR found. Will create one."
+          fi
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Create promotion PR
+        id: create-pr
+        if: steps.existing-pr.outputs.number == ''
+        run: |
+          PR_NUMBER=$(gh pr create \
+            --base staging \
+            --head develop \
+            --title "chore: promote develop → staging" \
+            --body "Automated promotion. Fast-forwarding staging to develop." \
+            --repo "$GITHUB_REPOSITORY" \
+            | grep -o '[0-9]*$')
+
+          echo "Created PR #$PR_NUMBER"
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Merge promotion PR
+        run: |
+          PR_NUMBER="${{ steps.existing-pr.outputs.number || steps.create-pr.outputs.number }}"
+          echo "Merging PR #$PR_NUMBER"
+
+          gh pr merge "$PR_NUMBER" \
+            --rebase \
+            --delete-branch=false
 
       - name: Summary
         run: |
-          DEVELOP_SHA=$(git rev-parse origin/develop)
-          echo "staging promoted to: $DEVELOP_SHA"
+          git fetch origin
+          STAGING_SHA=$(git rev-parse origin/staging)
+          echo "staging promoted to: $STAGING_SHA"
           echo "Railway staging deployment triggered."
