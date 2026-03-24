@@ -23,10 +23,11 @@ import type {
   WizardUpdateResponse,
   WizardPrefillData,
   CurrentStateType,
+  DeployTarget,
   WizardFeature,
   FeaturePriority,
 } from "@/types";
-import { CURRENT_STATE_OPTIONS as STATE_OPTIONS, FEATURE_PRIORITY_OPTIONS } from "@/types";
+import { CURRENT_STATE_OPTIONS as STATE_OPTIONS, DEPLOY_TARGET_OPTIONS, FEATURE_PRIORITY_OPTIONS } from "@/types";
 
 // ── Wizard state ──────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ interface WizardData {
   currentStateType: CurrentStateType;
   currentStateNotes: string;
   desiredStateNotes: string;
+  deployTargets: DeployTarget[];
   // Step 4
   features: WizardFeature[];
 }
@@ -55,6 +57,7 @@ const INITIAL: WizardData = {
   currentStateType: "new_product",
   currentStateNotes: "",
   desiredStateNotes: "",
+  deployTargets: [],
   features: [],
 };
 
@@ -445,6 +448,47 @@ function Step3({
           className="input w-full resize-none mt-2"
         />
       </div>
+
+      {/* Deployment Targets */}
+      <div>
+        <FieldLabel
+          label="Deployment targets"
+          hint="Where do you intend to deploy this application? Select all that apply."
+        />
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+          {DEPLOY_TARGET_OPTIONS.map((opt) => {
+            const checked = data.deployTargets.includes(opt.value);
+            return (
+              <label
+                key={opt.value}
+                className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+                  checked
+                    ? "border-brand-400 bg-brand-50 text-brand-800"
+                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-brand-600 shrink-0"
+                  checked={checked}
+                  onChange={() => {
+                    const next = checked
+                      ? data.deployTargets.filter((t) => t !== opt.value)
+                      : [...data.deployTargets, opt.value];
+                    onChange({ deployTargets: next });
+                  }}
+                />
+                <span className="flex flex-col">
+                  <span className="text-sm font-medium leading-tight">{opt.label}</span>
+                  {opt.hint && (
+                    <span className="text-xs text-gray-400 leading-tight mt-0.5">{opt.hint}</span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -694,6 +738,7 @@ export default function WizardPage() {
             currentStateType: p.current_state_type || "new_product",
             currentStateNotes: p.current_state_notes,
             desiredStateNotes: p.desired_state_notes,
+            deployTargets: p.deploy_targets ?? [],
             features: p.features,
           });
         }
@@ -771,6 +816,7 @@ export default function WizardPage() {
       current_state_type: data.currentStateType,
       current_state_notes: data.currentStateNotes,
       desired_state_notes: data.desiredStateNotes,
+      deploy_targets: data.deployTargets,
       features: data.features.filter((f) => f.description.trim()),
     };
     try {

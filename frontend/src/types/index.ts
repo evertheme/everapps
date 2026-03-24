@@ -198,6 +198,23 @@ export const CURRENT_STATE_OPTIONS: { value: CurrentStateType; label: string }[]
   { value: "other",             label: "Other" },
 ];
 
+export type DeployTarget =
+  | "web"
+  | "ios"
+  | "android"
+  | "desktop"
+  | "api_service"
+  | "other";
+
+export const DEPLOY_TARGET_OPTIONS: { value: DeployTarget; label: string; hint: string }[] = [
+  { value: "web",         label: "Web",           hint: "Browser-based app" },
+  { value: "ios",         label: "iOS",           hint: "Native iPhone / iPad" },
+  { value: "android",     label: "Android",       hint: "Native Android device" },
+  { value: "desktop",     label: "Desktop",       hint: "Windows / macOS / Linux app" },
+  { value: "api_service", label: "API / Service", hint: "Backend service or integration" },
+  { value: "other",       label: "Other",         hint: "" },
+];
+
 export interface WizardSuggestions {
   business_problem: string;
   business_objectives: string[];
@@ -224,6 +241,7 @@ export interface WizardPrefillData {
   current_state_notes: string;
   desired_state_notes: string;
   features: WizardFeature[];
+  deploy_targets: DeployTarget[];
 }
 
 export interface WizardUpdateResponse {

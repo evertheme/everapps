@@ -972,6 +972,84 @@ class TestWizardService:
         )
         assert "Functional Requirements" not in version.content
 
+    def test_save_wizard_document_with_deploy_targets_includes_section(self, db_session, test_user):
+        from app.models.project import Project
+        from app.services.gap_analysis_service import save_wizard_document
+        from app.models.document import DocumentVersion
+
+        project = Project(id=uuid.uuid4(), user_id=test_user.id, name="P")
+        db_session.add(project)
+        db_session.commit()
+
+        payload = {
+            **self.WIZARD_PAYLOAD,
+            "project_id": project.id,
+            "user_id": test_user.id,
+            "deploy_targets": ["web", "ios", "android"],
+        }
+        doc = save_wizard_document(**payload, db=db_session)
+
+        version = (
+            db_session.query(DocumentVersion)
+            .filter(DocumentVersion.document_id == doc.id)
+            .first()
+        )
+        assert "Deployment Targets" in version.content
+        assert "Web" in version.content
+        assert "iOS" in version.content
+        assert "Android" in version.content
+
+    def test_save_wizard_document_without_deploy_targets_omits_section(self, db_session, test_user):
+        from app.models.project import Project
+        from app.services.gap_analysis_service import save_wizard_document
+        from app.models.document import DocumentVersion
+
+        project = Project(id=uuid.uuid4(), user_id=test_user.id, name="P")
+        db_session.add(project)
+        db_session.commit()
+
+        payload = {
+            **self.WIZARD_PAYLOAD,
+            "project_id": project.id,
+            "user_id": test_user.id,
+            "deploy_targets": [],
+        }
+        doc = save_wizard_document(**payload, db=db_session)
+
+        version = (
+            db_session.query(DocumentVersion)
+            .filter(DocumentVersion.document_id == doc.id)
+            .first()
+        )
+        assert "Deployment Targets" not in version.content
+
+    def test_deploy_target_labels_are_human_readable(self, db_session, test_user):
+        from app.models.project import Project
+        from app.services.gap_analysis_service import save_wizard_document
+        from app.models.document import DocumentVersion
+
+        project = Project(id=uuid.uuid4(), user_id=test_user.id, name="P")
+        db_session.add(project)
+        db_session.commit()
+
+        payload = {
+            **self.WIZARD_PAYLOAD,
+            "project_id": project.id,
+            "user_id": test_user.id,
+            "deploy_targets": ["desktop", "api_service"],
+        }
+        doc = save_wizard_document(**payload, db=db_session)
+
+        version = (
+            db_session.query(DocumentVersion)
+            .filter(DocumentVersion.document_id == doc.id)
+            .first()
+        )
+        # Internal keys must be converted to readable labels
+        assert "desktop" not in version.content.lower().split("deployment targets")[-1].split("\n")[1]
+        assert "Desktop" in version.content
+        assert "API / Service" in version.content
+
     @pytest.mark.asyncio
     async def test_generate_wizard_suggestions_calls_llm(self, db_session, test_user):
         from app.services.gap_analysis_service import generate_wizard_suggestions
@@ -1101,6 +1179,34 @@ class TestWizardEndpoints:
             f"/api/v1/documents/{project_id}/{doc_id}"
         ).json()["latest_content"]
         assert "Functional Requirements" not in content
+
+    def test_generate_with_deploy_targets_includes_section(self, auth_client, test_project):
+        project_id = test_project["id"]
+        payload = {**self.WIZARD_PAYLOAD, "deploy_targets": ["web", "ios"]}
+        res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=payload,
+        )
+        assert res.status_code == 201
+        content = auth_client.get(
+            f"/api/v1/documents/{project_id}/{res.json()['document_id']}"
+        ).json()["latest_content"]
+        assert "Deployment Targets" in content
+        assert "Web" in content
+        assert "iOS" in content
+
+    def test_generate_without_deploy_targets_omits_section(self, auth_client, test_project):
+        project_id = test_project["id"]
+        payload = {**self.WIZARD_PAYLOAD, "deploy_targets": []}
+        res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=payload,
+        )
+        assert res.status_code == 201
+        content = auth_client.get(
+            f"/api/v1/documents/{project_id}/{res.json()['document_id']}"
+        ).json()["latest_content"]
+        assert "Deployment Targets" not in content
 
     def test_generate_features_include_priority_labels(self, auth_client, test_project):
         project_id = test_project["id"]
@@ -1323,6 +1429,36 @@ class TestWizardUpdateAndPrefill:
         assert "must_have" in priorities
         assert "nice_to_have" in priorities
 
+    def test_prefill_returns_deploy_targets(self, auth_client, test_project):
+        project_id = test_project["id"]
+        payload = {**self.WIZARD_PAYLOAD, "deploy_targets": ["web", "android"]}
+        create_res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=payload,
+        )
+        assert create_res.status_code == 201
+        doc_id = create_res.json()["document_id"]
+
+        data = auth_client.get(
+            f"/api/v1/req-assistant/{project_id}/wizard/prefill/{doc_id}"
+        ).json()
+        assert "deploy_targets" in data
+        assert set(data["deploy_targets"]) == {"web", "android"}
+
+    def test_prefill_empty_deploy_targets_when_none_set(self, auth_client, test_project):
+        project_id = test_project["id"]
+        # No deploy_targets in payload — field should default to empty list
+        create_res = auth_client.post(
+            f"/api/v1/req-assistant/{project_id}/wizard/generate",
+            json=self.WIZARD_PAYLOAD,
+        )
+        doc_id = create_res.json()["document_id"]
+
+        data = auth_client.get(
+            f"/api/v1/req-assistant/{project_id}/wizard/prefill/{doc_id}"
+        ).json()
+        assert data["deploy_targets"] == []
+
     def test_prefill_nonexistent_document_returns_404(self, auth_client, test_project):
         project_id = test_project["id"]
         res = auth_client.get(
@@ -1365,6 +1501,10 @@ Currently things are manual.
 **Desired Future State:**
 Things will be automated.
 
+### Deployment Targets
+
+Web, iOS, Android
+
 ## 5. Functional Requirements
 
 | ID | Requirement | Priority |
@@ -1381,6 +1521,39 @@ Things will be automated.
         assert result["current_state_type"] == "enhance_existing"
         assert "manual" in result["current_state_notes"].lower()
         assert "automated" in result["desired_state_notes"].lower()
+        assert set(result["deploy_targets"]) == {"web", "ios", "android"}
         assert len(result["features"]) == 2
         assert result["features"][0]["priority"] == "must_have"
         assert result["features"][1]["priority"] == "nice_to_have"
+
+    def test_parse_wizard_prefill_no_deploy_targets(self):
+        """parse_wizard_prefill returns empty list when no Deployment Targets section exists."""
+        from app.services.gap_analysis_service import parse_wizard_prefill
+
+        md = """\
+# Requirements Document: Test Product
+
+## 1. Document Header
+
+**Product Name:** Test Product  \\n**Version:** 0.1 (Draft)  \\n**Date:** 2026-01-01  \\n**Approval Status:** Draft  \\n**Description:** A short description.
+
+## 2. Executive Summary
+
+This is the executive summary.
+
+## 3. Project Context & Business Objectives
+
+### Business Problem Statement
+
+The core problem.
+
+### Business Objectives
+
+1. To increase revenue by 10%.
+
+### Current State vs. Desired Future State
+
+**Current State:** New Product (no current state)
+"""
+        result = parse_wizard_prefill(md)
+        assert result["deploy_targets"] == []

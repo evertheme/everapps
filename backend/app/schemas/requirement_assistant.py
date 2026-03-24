@@ -128,6 +128,8 @@ class WizardGenerateRequest(BaseModel):
     current_state_type: str
     current_state_notes: str = ""
     desired_state_notes: str = ""
+    # web | ios | android | desktop | api_service | other
+    deploy_targets: list[str] = []
     features: list[WizardFeature] = []
 
 
@@ -146,6 +148,7 @@ class WizardPrefillOut(BaseModel):
     current_state_type: str
     current_state_notes: str
     desired_state_notes: str
+    deploy_targets: list[str]
     features: list[WizardFeature]
 
 
