@@ -134,7 +134,7 @@ jobs:
           echo "Merging PR #$PR_NUMBER"
 
           gh pr merge "$PR_NUMBER" \
-            --squash \
+            --rebase \
             --delete-branch=false
 
       - name: Create annotated release tag
