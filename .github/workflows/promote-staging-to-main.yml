@@ -15,19 +15,16 @@ on:
 
 jobs:
   promote:
-    name: Fast-forward main to staging and tag release
+    name: Promote staging to main via PR and tag release
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
-
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch latest branch and tag state
         run: git fetch origin --tags
@@ -100,18 +97,55 @@ jobs:
             exit 1
           fi
 
-      - name: Promote main to staging
-        run: git push origin origin/staging:refs/heads/main
+      - name: Check for existing promotion PR
+        id: existing-pr
+        run: |
+          PR_NUMBER=$(gh pr list \
+            --base main \
+            --head staging \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Found existing open PR #$PR_NUMBER. Will merge it."
+          else
+            echo "No existing PR found. Will create one."
+          fi
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Create promotion PR
+        id: create-pr
+        if: steps.existing-pr.outputs.number == ''
+        run: |
+          PR_NUMBER=$(gh pr create \
+            --base main \
+            --head staging \
+            --title "chore: promote staging → main (${{ steps.version.outputs.tag }})" \
+            --body "Automated promotion. Fast-forwarding main to staging. Release: ${{ steps.version.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            | grep -o '[0-9]*$')
+
+          echo "Created PR #$PR_NUMBER"
+          echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Merge promotion PR
+        run: |
+          PR_NUMBER="${{ steps.existing-pr.outputs.number || steps.create-pr.outputs.number }}"
+          echo "Merging PR #$PR_NUMBER"
+
+          gh pr merge "$PR_NUMBER" \
+            --rebase \
+            --delete-branch=false
 
       - name: Create annotated release tag
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          git tag -a "$TAG" -m "Release $TAG" origin/staging
+          git fetch origin --tags
+          git tag -a "$TAG" -m "Release $TAG" origin/main
           git push origin "$TAG"
 
       - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
@@ -119,6 +153,7 @@ jobs:
 
       - name: Summary
         run: |
+          git fetch origin
           MAIN_SHA=$(git rev-parse origin/main)
           echo "main promoted to: $MAIN_SHA"
           echo "Release tagged: ${{ steps.version.outputs.tag }}"
