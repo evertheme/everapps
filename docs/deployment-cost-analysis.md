@@ -339,4 +339,8 @@ subject to change. Verify current rates using each provider's pricing calculator
 
 ---
 
+## 9. Decision for MVP
+
+Railway
+
 *Document generated for the everapps project · March 2026*
