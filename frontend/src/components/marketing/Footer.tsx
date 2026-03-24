@@ -18,7 +18,34 @@ const FOOTER_LINKS: Record<string, { label: string; href: string }[]> = {
   ],
 };
 
-export default function MarketingFooter() {
+type MarketingFooterProps = {
+  /** When true, show brand blurb and copyright only (no links). */
+  minimal?: boolean;
+};
+
+export default function MarketingFooter({ minimal = false }: MarketingFooterProps) {
+  if (minimal) {
+    return (
+      <footer className="bg-gray-900 text-gray-400">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+            <div>
+              <div className="inline-block mb-3">
+                <Image src="/images/brand/logo-light.png" alt="everapps" width={155} height={32} />
+              </div>
+              <p className="text-sm leading-relaxed max-w-md">
+                AI-powered requirements-to-backlog automation for modern product teams.
+              </p>
+            </div>
+            <span className="text-sm shrink-0">
+              © {new Date().getFullYear()} everapps. All rights reserved.
+            </span>
+          </div>
+        </div>
+      </footer>
+    );
+  }
+
   return (
     <footer className="bg-gray-900 text-gray-400">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">

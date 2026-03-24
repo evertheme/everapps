@@ -1,34 +1,17 @@
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
-import Link from 'next/link';
-import { ArrowRight, CheckCircle, Zap } from 'lucide-react';
+import { Zap } from 'lucide-react';
 import FaqAccordion from '@/components/marketing/FaqAccordion';
-import ComingSoonLanding from '@/components/marketing/ComingSoonLanding';
-import { isComingSoonMode } from '@/lib/coming-soon';
 import {
-  FAQS,
   FEATURES,
+  FAQS,
   HOW_IT_WORKS,
   Sparkles,
   USE_CASES,
 } from '@/lib/marketing-landing-content';
 
-export default async function LandingPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('access_token');
-  if (token?.value) {
-    redirect('/dashboard');
-  }
-
-  if (isComingSoonMode()) {
-    return <ComingSoonLanding />;
-  }
-
+export default function ComingSoonLanding() {
   return (
     <>
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-gradient-to-b from-brand-50 via-white to-white pt-20 pb-28 sm:pt-28 sm:pb-36">
-        {/* Subtle background orb */}
         <div
           aria-hidden
           className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[600px] rounded-full bg-brand-200/30 blur-3xl"
@@ -37,7 +20,7 @@ export default async function LandingPage() {
         <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="inline-flex items-center gap-2 bg-brand-100 text-brand-700 rounded-full px-4 py-1.5 text-sm font-medium mb-8 ring-1 ring-brand-200">
             <Sparkles className="w-3.5 h-3.5" />
-            AI-powered backlog generation
+            Coming soon
           </div>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-gray-900 tracking-tight leading-[1.08] mb-6">
@@ -48,35 +31,19 @@ export default async function LandingPage() {
             in seconds
           </h1>
 
-          <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-10 leading-relaxed">
+          <p className="text-xl text-gray-500 max-w-2xl mx-auto mb-6 leading-relaxed">
             Upload your product docs, let AI generate a structured backlog, review story quality
             automatically, and push everything straight to JIRA, Asana, Trello, or Azure DevOps.
           </p>
 
-          <div className="flex flex-wrap justify-center gap-4">
-            <Link
-              href="/register"
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-8 py-3.5 text-base font-semibold text-white shadow-md hover:bg-brand-700 transition-colors"
-            >
-              Start for free
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-2 rounded-xl bg-white border border-gray-300 px-8 py-3.5 text-base font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors"
-            >
-              View pricing
-            </Link>
-          </div>
-
-          <p className="mt-5 text-sm text-gray-400">
-            No credit card required &middot; Free tier available
+          <p className="text-base text-gray-600 max-w-xl mx-auto leading-relaxed">
+            everapps is launching soon. We&apos;re putting the finishing touches on the product;
+            check back here for updates.
           </p>
         </div>
       </section>
 
-      {/* ── Overview / How it works ──────────────────────────────────────── */}
-      <section id="overview" className="py-24 bg-gray-50">
+      <section className="py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">How it works</h2>
@@ -102,8 +69,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* ── Use Cases ───────────────────────────────────────────────────── */}
-      <section id="use-cases" className="py-24 bg-white">
+      <section className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">Built for every team</h2>
@@ -120,7 +86,9 @@ export default async function LandingPage() {
                   key={item.title}
                   className="group rounded-2xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-4 ${item.color}`}>
+                  <div
+                    className={`w-11 h-11 rounded-xl flex items-center justify-center mb-4 ${item.color}`}
+                  >
                     <Icon className="w-5 h-5" />
                   </div>
                   <h3 className="font-semibold text-gray-900 mb-2">{item.title}</h3>
@@ -132,8 +100,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* ── Features ────────────────────────────────────────────────────── */}
-      <section id="features" className="py-24 bg-gray-50">
+      <section className="py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
@@ -152,7 +119,9 @@ export default async function LandingPage() {
                   key={feature.title}
                   className="bg-white rounded-2xl border border-gray-200 p-7 shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-5 ${feature.color}`}>
+                  <div
+                    className={`w-11 h-11 rounded-xl flex items-center justify-center mb-5 ${feature.color}`}
+                  >
                     <Icon className="w-5 h-5" />
                   </div>
                   <h3 className="font-semibold text-gray-900 mb-2">{feature.title}</h3>
@@ -162,7 +131,6 @@ export default async function LandingPage() {
             })}
           </div>
 
-          {/* Social proof strip */}
           <div className="mt-14 bg-white rounded-2xl border border-gray-200 p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-sm">
             <div className="flex items-center gap-3">
               <Zap className="w-5 h-5 text-brand-600" />
@@ -171,10 +139,7 @@ export default async function LandingPage() {
             <div className="flex flex-wrap items-center justify-center gap-4 text-sm font-medium text-gray-500">
               {['JIRA', 'Asana', 'Trello', 'Azure DevOps', 'OpenAI', 'Anthropic', 'Azure AI', 'Ollama'].map(
                 (name) => (
-                  <span
-                    key={name}
-                    className="px-3 py-1 rounded-full bg-gray-100 text-gray-600"
-                  >
+                  <span key={name} className="px-3 py-1 rounded-full bg-gray-100 text-gray-600">
                     {name}
                   </span>
                 ),
@@ -184,67 +149,20 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* ── FAQs ────────────────────────────────────────────────────────── */}
-      <section id="faq" className="py-24 bg-white">
+      <section className="py-24 bg-white">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-14">
             <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-4">
               Frequently asked questions
             </h2>
             <p className="text-lg text-gray-500">
-              Still have questions?{' '}
-              <Link href="mailto:hello@everapps.io" className="text-brand-600 hover:underline">
-                Drop us a line.
-              </Link>
+              Questions? Reach us at hello@everapps.io
             </p>
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-white shadow-sm px-8 py-2">
             <FaqAccordion items={FAQS} />
           </div>
-        </div>
-      </section>
-
-      {/* ── Signup CTA ──────────────────────────────────────────────────── */}
-      <section className="py-24 bg-brand-600">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <Sparkles className="w-10 h-10 text-brand-200 mx-auto mb-6" />
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-5 tracking-tight">
-            Start building better backlogs today
-          </h2>
-          <p className="text-lg text-brand-200 mb-10 max-w-2xl mx-auto leading-relaxed">
-            Join product teams that have replaced hours of manual story writing with minutes of AI-powered generation. Free to start, no credit card needed.
-          </p>
-
-          <div className="flex flex-wrap justify-center gap-4 mb-8">
-            <Link
-              href="/register"
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-brand-600 shadow-md hover:bg-brand-50 transition-colors"
-            >
-              Create a free account
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-            <Link
-              href="/pricing"
-              className="inline-flex items-center gap-2 rounded-xl border border-brand-400 bg-transparent px-8 py-3.5 text-base font-semibold text-white hover:bg-brand-500 transition-colors"
-            >
-              See pricing
-            </Link>
-          </div>
-
-          <ul className="flex flex-wrap justify-center gap-x-8 gap-y-2 text-sm text-brand-200">
-            {[
-              'Free tier — always',
-              'No credit card required',
-              'Cancel anytime',
-              'Bring your own LLM key',
-            ].map((item) => (
-              <li key={item} className="flex items-center gap-1.5">
-                <CheckCircle className="w-4 h-4" />
-                {item}
-              </li>
-            ))}
-          </ul>
         </div>
       </section>
     </>
