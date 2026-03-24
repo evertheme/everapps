@@ -11,9 +11,28 @@ const NAV_LINKS = [
   { href: '/pricing', label: 'Pricing' },
 ];
 
-export default function MarketingHeader() {
+type MarketingHeaderProps = {
+  /** When true, show logo only (no nav links, auth CTAs, or mobile menu). */
+  hideNavigation?: boolean;
+};
+
+export default function MarketingHeader({ hideNavigation = false }: MarketingHeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+
+  if (hideNavigation) {
+    return (
+      <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex h-16 items-center">
+            <div className="shrink-0" aria-hidden>
+              <Image src="/images/brand/logo.png" alt="everapps" width={155} height={32} />
+            </div>
+          </div>
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200">

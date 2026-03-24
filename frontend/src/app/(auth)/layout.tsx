@@ -1,6 +1,12 @@
 import Image from "next/image";
+import { redirect } from "next/navigation";
+import { isComingSoonMode } from "@/lib/coming-soon";
 
-export default function AuthLayout({ children }: { children: React.ReactNode }) {
+export default async function AuthLayout({ children }: { children: React.ReactNode }) {
+  if (isComingSoonMode()) {
+    redirect("/");
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-50 to-blue-50 p-4">
       <div className="w-full max-w-md">
