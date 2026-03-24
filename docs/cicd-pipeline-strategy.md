@@ -216,6 +216,50 @@ jobs:
 
 ---
 
+## Promotion Workflows
+
+Instead of running git commands manually to promote between environments, two `workflow_dispatch` workflows act as one-click promotion buttons in the GitHub Actions UI.
+
+### Workflows
+
+| Workflow | File | Trigger |
+|----------|------|---------|
+| Promote develop → staging | `.github/workflows/promote-develop-to-staging.yml` | Manual button |
+| Promote staging → main | `.github/workflows/promote-staging-to-main.yml` | Manual button + version input |
+
+### How to trigger a promotion
+
+1. Go to **GitHub → Actions** tab
+2. Select the promotion workflow from the left sidebar
+3. Click **Run workflow**
+4. For `staging → main`: enter the version tag (e.g. `v1.2.0`) in the input field
+5. Click **Run workflow**
+
+Both workflows run a pre-flight check before pushing. If the fast-forward is not possible (branches have diverged), the workflow fails with a clear error message and instructions for investigating. Nothing is pushed.
+
+The `staging → main` workflow also creates an annotated git tag and a GitHub Release with auto-generated notes.
+
+### One-time setup: GH_PAT secret
+
+The workflows push directly to protected branches, which requires a Personal Access Token (PAT) with write access. `GITHUB_TOKEN` cannot bypass branch protection rules.
+
+**Steps to create and configure the PAT:**
+
+1. Go to **GitHub → Settings → Developer Settings → Personal access tokens → Fine-grained tokens**
+2. Click **Generate new token**
+3. Set:
+   - **Resource owner:** `evertheme`
+   - **Repository access:** `evertheme/everapps` only
+   - **Permissions → Contents:** `Read and Write`
+   - **Permissions → Pull requests:** `Read and Write` (needed for `gh release create`)
+4. Copy the generated token
+5. Go to **GitHub → evertheme/everapps → Settings → Secrets and variables → Actions**
+6. Click **New repository secret**
+7. Name: `GH_PAT`, Value: paste the token
+8. Click **Add secret**
+
+---
+
 ## Edge Cases
 
 ### PR that only changes docs or config
@@ -239,3 +283,55 @@ Then add `No Tests Required` as an optional (not required) status check in branc
 ### Hotfix PRs
 
 Hotfix branches target `main` directly. The PR into `main` triggers CI on `backend/**` and/or `frontend/**` as normal. After merging and back-propagating (`main → staging → develop`), no additional CI runs — same code.
+
+---
+
+## Release Tagging
+
+### How versioning works
+
+All release workflows use **auto-increment versioning** — you select the bump type and the workflow reads the latest git tag, calculates the next version, and creates it for you. No manual version entry required.
+
+| Bump type | Example: last tag `v1.2.3` | Result |
+|-----------|---------------------------|--------|
+| `patch` | bug fixes, hotfixes | `v1.2.4` |
+| `minor` | new backward-compatible features | `v1.3.0` |
+| `major` | breaking changes, major milestones | `v2.0.0` |
+
+If no tags exist yet, versioning starts from `v0.0.0`.
+
+### Release notes categories
+
+`.github/release.yml` configures how GitHub groups PRs in the auto-generated release notes. Apply one of these labels to each PR before merging:
+
+| Label | Release notes section |
+|-------|-----------------------|
+| `feature`, `enhancement` | New Features |
+| `bug`, `fix` | Bug Fixes |
+| `performance` | Performance |
+| `chore`, `dependencies`, `ci` | Chores & Maintenance |
+| `documentation` | Documentation |
+
+PRs without a matching label appear under "Other Changes."
+
+### Standalone `Create Release` workflow
+
+A dedicated `Create Release` workflow exists for cases where a release needs to be created independently of a promotion — most commonly after a **hotfix** is merged directly to `main`.
+
+**To trigger:** GitHub → Actions → **Create Release** → Run workflow
+
+| Input | Description |
+|-------|-------------|
+| `bump` | `patch`, `minor`, or `major` |
+| `branch` | Branch or commit to tag (default: `main`) |
+| `prerelease` | Check to mark as pre-release |
+
+The workflow calculates the next version, creates an annotated tag on the specified branch, and publishes a GitHub Release with categorized notes.
+
+### `Promote staging → main` workflow
+
+The promotion workflow also handles tagging. After the fast-forward push to `main`, it runs the same auto-increment logic and creates the release in one step.
+
+**To trigger:** GitHub → Actions → **Promote staging → main** → Run workflow → select bump type
+
+This is the standard release path. Use `Create Release` only for hotfixes or exceptional cases.
