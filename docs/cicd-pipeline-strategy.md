@@ -14,15 +14,15 @@ This strategy is designed to work alongside the branching model described in [`g
 
 ## The Problem with Naive CI Configuration
 
-Without intentional trigger design, a single feature will trigger 10 job runs:
+Without intentional trigger design, a single feature will trigger many duplicate job runs:
 
-| Event | Workflow | Jobs run |
-|-------|----------|----------|
-| push to `feature/x` (per commit) | `feature-branch-tests.yml` | backend + frontend |
-| open PR into `develop` | `ci.yml` (pull_request) | backend + frontend |
-| PR merged → push to `develop` | `ci.yml` (push) | backend + frontend — **duplicate** |
-| ff-only push to `staging` | `ci.yml` (push) | backend + frontend — **duplicate** |
-| ff-only push to `main` | `ci.yml` (push) | backend + frontend — **duplicate** |
+| Event | Jobs run |
+|-------|----------|
+| push to `feature/x` (per commit) | backend + frontend |
+| open PR into `develop` | backend + frontend |
+| PR merged → push to `develop` | backend + frontend — **duplicate** |
+| promotion push to `staging` | backend + frontend — **duplicate** |
+| promotion push to `main` | backend + frontend — **duplicate** |
 
 Runs 3–5 are byte-for-byte the same code that already passed run 2. There is also no path filtering, so a CSS-only change triggers the entire Python test suite.
 
@@ -104,31 +104,31 @@ Railway is connected to each branch and deploys on every push:
 
 ## GitHub Branch Protection Settings
 
-### `develop`
+The project uses GitHub **Rulesets** (not classic branch protection rules) with two rules:
+
+### `protect-develop` ruleset — targets `develop`
 
 - Require pull requests before merging
 - Require status checks to pass:
   - `Backend Tests` (when backend files changed)
   - `Frontend Tests` (when frontend files changed)
 - Require branches to be up to date before merging
-- Do not allow bypassing these settings
 
-### `staging` and `main`
+### `protect-main-staging` ruleset — targets `staging` and `main`
 
 - Require pull requests before merging
-- No required CI status checks (promotions carry no new code)
-- Require linear history
-- Do not allow bypassing these settings
+- Require linear history (no merge commits allowed)
+- No required CI status checks (promotions carry already-tested code)
 
-> **Note on "no required CI" for staging/main:** Because promotions are ff-only merges of already-tested code, requiring CI on these branches would add latency with no security benefit. The branch protection on `develop` is where the guarantee is established.
+> **Note on "no required CI" for staging/main:** Because the promotion workflows rebase-merge already-tested code, requiring CI on these branches would add latency with no security benefit. The `develop` ruleset is where the guarantee is established.
+
+> **Merge commits are disabled repo-wide.** Only squash merges (for feature → develop) and rebase merges (for promotions) are allowed. This keeps history linear and prevents future divergence.
 
 ---
 
 ## Workflow Files
 
 ### `.github/workflows/ci.yml`
-
-This is the only workflow file. `feature-branch-tests.yml` is deleted.
 
 ```yaml
 name: CI
@@ -225,23 +225,40 @@ Instead of running git commands manually to promote between environments, two `w
 | Workflow | File | Trigger |
 |----------|------|---------|
 | Promote develop → staging | `.github/workflows/promote-develop-to-staging.yml` | Manual button |
-| Promote staging → main | `.github/workflows/promote-staging-to-main.yml` | Manual button + version input |
+| Promote staging → main | `.github/workflows/promote-staging-to-main.yml` | Manual button + bump type selection |
 
 ### How to trigger a promotion
 
+**Promote develop → staging:**
+
 1. Go to **GitHub → Actions** tab
-2. Select the promotion workflow from the left sidebar
+2. Select **Promote develop → staging** from the left sidebar
+3. Click **Run workflow** (no inputs required)
+4. Click **Run workflow**
+
+**Promote staging → main:**
+
+1. Go to **GitHub → Actions** tab
+2. Select **Promote staging → main** from the left sidebar
 3. Click **Run workflow**
-4. For `staging → main`: enter the version tag (e.g. `v1.2.0`) in the input field
+4. Select the **bump type**: `patch`, `minor`, or `major`
 5. Click **Run workflow**
 
-Both workflows run a pre-flight check before pushing. If the fast-forward is not possible (branches have diverged), the workflow fails with a clear error message and instructions for investigating. Nothing is pushed.
+### How the workflows operate
 
-The `staging → main` workflow also creates an annotated git tag and a GitHub Release with auto-generated notes.
+Both promotion workflows follow the same pattern:
+
+1. **Pre-flight check:** Compares the file tree of the source branch to the target branch using `git rev-parse origin/BRANCH^{tree}`. If the trees are identical, the workflow exits cleanly with no PR created — there is nothing to promote.
+2. **Create PR:** Opens a pull request from the source branch into the target branch using `gh pr create`.
+3. **Rebase merge:** Merges the PR using `gh pr merge --rebase`, which replays source commits onto the target, preserving linear ancestry and satisfying the `required_linear_history` ruleset rule.
+4. **Release (staging → main only):** After merging, reads the latest git tag, auto-increments based on the selected bump type, creates an annotated tag on `main`, and publishes a GitHub Release with categorized notes.
+
+> **Why tree comparison and not ancestry comparison?**
+> Rebase merges create new commit SHAs even though the code is identical. A traditional `git merge-base --is-ancestor` check would incorrectly report divergence after a rebase merge. Comparing file trees (`^{tree}`) checks actual content, not commit history, and correctly reports "up to date" when both branches hold the same files.
 
 ### One-time setup: GH_PAT secret
 
-The workflows push directly to protected branches, which requires a Personal Access Token (PAT) with write access. `GITHUB_TOKEN` cannot bypass branch protection rules.
+The promotion workflows create and merge PRs into protected branches. `GITHUB_TOKEN` cannot bypass branch protection rulesets, so a Personal Access Token (PAT) with the appropriate permissions is required.
 
 **Steps to create and configure the PAT:**
 
@@ -251,7 +268,7 @@ The workflows push directly to protected branches, which requires a Personal Acc
    - **Resource owner:** `evertheme`
    - **Repository access:** `evertheme/everapps` only
    - **Permissions → Contents:** `Read and Write`
-   - **Permissions → Pull requests:** `Read and Write` (needed for `gh release create`)
+   - **Permissions → Pull requests:** `Read and Write`
 4. Copy the generated token
 5. Go to **GitHub → evertheme/everapps → Settings → Secrets and variables → Actions**
 6. Click **New repository secret**
@@ -282,7 +299,7 @@ Then add `No Tests Required` as an optional (not required) status check in branc
 
 ### Hotfix PRs
 
-Hotfix branches target `main` directly. The PR into `main` triggers CI on `backend/**` and/or `frontend/**` as normal. After merging and back-propagating (`main → staging → develop`), no additional CI runs — same code.
+Hotfix branches target `main` directly. The PR into `main` triggers CI on `backend/**` and/or `frontend/**` as normal. After merging and back-propagating (`main → staging → develop`), no additional CI runs — same code. See the hotfix protocol in `git-branching-strategy.md`.
 
 ---
 
@@ -330,8 +347,8 @@ The workflow calculates the next version, creates an annotated tag on the specif
 
 ### `Promote staging → main` workflow
 
-The promotion workflow also handles tagging. After the fast-forward push to `main`, it runs the same auto-increment logic and creates the release in one step.
+The promotion workflow handles both the rebase merge and the release tagging in a single step. After the PR is merged into `main`, it runs the auto-increment logic and creates the GitHub Release.
 
 **To trigger:** GitHub → Actions → **Promote staging → main** → Run workflow → select bump type
 
-This is the standard release path. Use `Create Release` only for hotfixes or exceptional cases.
+This is the standard release path. Use `Create Release` only for hotfixes or exceptional cases where a tag needs to be created outside of a normal promotion.
