@@ -34,32 +34,23 @@ jobs:
       - name: Fetch latest branch and tag state
         run: git fetch origin --tags
 
-      - name: Verify fast-forward is possible
+      - name: Check for changes to promote
+        id: preflight
         run: |
-          STAGING_SHA=$(git rev-parse origin/staging)
-          MAIN_SHA=$(git rev-parse origin/main)
+          STAGING_TREE=$(git rev-parse origin/staging^{tree})
+          MAIN_TREE=$(git rev-parse origin/main^{tree})
 
-          if [ "$STAGING_SHA" = "$MAIN_SHA" ]; then
-            echo "main is already up to date with staging. Nothing to promote."
-            exit 0
+          if [ "$STAGING_TREE" = "$MAIN_TREE" ]; then
+            echo "main already has the same content as staging. Nothing to promote."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Pre-flight passed. main has new content to receive from staging."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-
-          if ! git merge-base --is-ancestor "$MAIN_SHA" "$STAGING_SHA"; then
-            echo ""
-            echo "ERROR: Fast-forward is not possible."
-            echo "main has commits that are not in staging."
-            echo ""
-            echo "Run the following to investigate:"
-            echo "  git log --oneline origin/staging..origin/main"
-            echo ""
-            echo "Fix the divergence before promoting."
-            exit 1
-          fi
-
-          echo "Pre-flight check passed. main can be fast-forwarded to staging."
 
       - name: Calculate next version
         id: version
+        if: steps.preflight.outputs.skip != 'true'
         run: |
           LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -1)
           if [ -z "$LATEST" ]; then
@@ -94,6 +85,7 @@ jobs:
           echo "tag=$NEXT" >> "$GITHUB_OUTPUT"
 
       - name: Verify tag does not already exist
+        if: steps.preflight.outputs.skip != 'true'
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -104,6 +96,7 @@ jobs:
 
       - name: Check for existing promotion PR
         id: existing-pr
+        if: steps.preflight.outputs.skip != 'true'
         run: |
           PR_NUMBER=$(gh pr list \
             --base main \
@@ -121,13 +114,13 @@ jobs:
 
       - name: Create promotion PR
         id: create-pr
-        if: steps.existing-pr.outputs.number == ''
+        if: steps.preflight.outputs.skip != 'true' && steps.existing-pr.outputs.number == ''
         run: |
           PR_NUMBER=$(gh pr create \
             --base main \
             --head staging \
             --title "chore: promote staging → main (${{ steps.version.outputs.tag }})" \
-            --body "Automated promotion. Fast-forwarding main to staging. Release: ${{ steps.version.outputs.tag }}" \
+            --body "Automated promotion. Advancing main to match staging. Release: ${{ steps.version.outputs.tag }}" \
             --repo "$GITHUB_REPOSITORY" \
             | grep -o '[0-9]*$')
 
@@ -135,6 +128,7 @@ jobs:
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: Merge promotion PR
+        if: steps.preflight.outputs.skip != 'true'
         run: |
           PR_NUMBER="${{ steps.existing-pr.outputs.number || steps.create-pr.outputs.number }}"
           echo "Merging PR #$PR_NUMBER"
@@ -144,6 +138,7 @@ jobs:
             --delete-branch=false
 
       - name: Create annotated release tag
+        if: steps.preflight.outputs.skip != 'true'
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           git fetch origin --tags
@@ -151,6 +146,7 @@ jobs:
           git push origin "$TAG"
 
       - name: Create GitHub Release
+        if: steps.preflight.outputs.skip != 'true'
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
@@ -158,8 +154,12 @@ jobs:
 
       - name: Summary
         run: |
-          git fetch origin
-          MAIN_SHA=$(git rev-parse origin/main)
-          echo "main promoted to: $MAIN_SHA"
-          echo "Release tagged: ${{ steps.version.outputs.tag }}"
-          echo "Railway production deployment triggered."
+          if [ "${{ steps.preflight.outputs.skip }}" = "true" ]; then
+            echo "No promotion needed. main is already in sync with staging."
+          else
+            git fetch origin
+            MAIN_SHA=$(git rev-parse origin/main)
+            echo "main promoted to: $MAIN_SHA"
+            echo "Release tagged: ${{ steps.version.outputs.tag }}"
+            echo "Railway production deployment triggered."
+          fi

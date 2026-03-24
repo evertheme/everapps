@@ -19,32 +19,24 @@ jobs:
       - name: Fetch latest branch state
         run: git fetch origin
 
-      - name: Verify fast-forward is possible
+      - name: Check for changes to promote
+        id: preflight
         run: |
-          DEVELOP_SHA=$(git rev-parse origin/develop)
-          STAGING_SHA=$(git rev-parse origin/staging)
+          DEVELOP_TREE=$(git rev-parse origin/develop^{tree})
+          STAGING_TREE=$(git rev-parse origin/staging^{tree})
 
-          if [ "$DEVELOP_SHA" = "$STAGING_SHA" ]; then
-            echo "staging is already up to date with develop. Nothing to promote."
-            exit 0
+          if [ "$DEVELOP_TREE" = "$STAGING_TREE" ]; then
+            echo "staging already has the same content as develop. Nothing to promote."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            COUNT=$(git rev-list origin/staging..origin/develop --count)
+            echo "Pre-flight passed. staging will receive $COUNT new commit(s) from develop."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-
-          if ! git merge-base --is-ancestor "$STAGING_SHA" "$DEVELOP_SHA"; then
-            echo ""
-            echo "ERROR: Fast-forward is not possible."
-            echo "staging has commits that are not in develop."
-            echo ""
-            echo "Run the following to investigate:"
-            echo "  git log --oneline origin/develop..origin/staging"
-            echo ""
-            echo "Fix the divergence before promoting."
-            exit 1
-          fi
-
-          echo "Pre-flight check passed. staging can be fast-forwarded to develop."
 
       - name: Check for existing promotion PR
         id: existing-pr
+        if: steps.preflight.outputs.skip != 'true'
         run: |
           PR_NUMBER=$(gh pr list \
             --base staging \
@@ -62,13 +54,13 @@ jobs:
 
       - name: Create promotion PR
         id: create-pr
-        if: steps.existing-pr.outputs.number == ''
+        if: steps.preflight.outputs.skip != 'true' && steps.existing-pr.outputs.number == ''
         run: |
           PR_NUMBER=$(gh pr create \
             --base staging \
             --head develop \
             --title "chore: promote develop → staging" \
-            --body "Automated promotion. Fast-forwarding staging to develop." \
+            --body "Automated promotion. Advancing staging to match develop." \
             --repo "$GITHUB_REPOSITORY" \
             | grep -o '[0-9]*$')
 
@@ -76,6 +68,7 @@ jobs:
           echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: Merge promotion PR
+        if: steps.preflight.outputs.skip != 'true'
         run: |
           PR_NUMBER="${{ steps.existing-pr.outputs.number || steps.create-pr.outputs.number }}"
           echo "Merging PR #$PR_NUMBER"
@@ -86,7 +79,11 @@ jobs:
 
       - name: Summary
         run: |
-          git fetch origin
-          STAGING_SHA=$(git rev-parse origin/staging)
-          echo "staging promoted to: $STAGING_SHA"
-          echo "Railway staging deployment triggered."
+          if [ "${{ steps.preflight.outputs.skip }}" = "true" ]; then
+            echo "No promotion needed. staging is already in sync with develop."
+          else
+            git fetch origin
+            STAGING_SHA=$(git rev-parse origin/staging)
+            echo "staging promoted to: $STAGING_SHA"
+            echo "Railway staging deployment triggered."
+          fi
