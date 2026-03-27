@@ -46,6 +46,14 @@ Technical design for handling large requirement documents that exceed LLM contex
 
 ---
 
+### [account-creation-onboarding.md](./account-creation-onboarding.md)
+
+Four planned enhancements covering the complete account creation and onboarding flow: legal consent and Railway AUP alignment, tiered identity verification, a user onboarding survey that captures role and expertise to personalise AI behaviour, and a project creation survey that drives deployment strategy and tech stack selection.
+
+**Read this if you need to:** implement or extend account registration, legal consent, identity verification, or the onboarding and project creation survey flows.
+
+---
+
 ### [deployment-cost-analysis.md](./deployment-cost-analysis.md)
 
 Historical platform evaluation comparing Railway, Fly.io, Render, and Google Cloud Run across cost, complexity, and operational fit. The platform decision (Railway) has been made.
